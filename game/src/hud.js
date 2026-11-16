@@ -155,8 +155,9 @@ export function updateHud(hud, state) {
   setText(el('score-def'), String(state.score[1]));
   const aliveAtk = state.agents.filter((a) => a.team === p.team && a.alive).length;
   const aliveDef = state.agents.filter((a) => a.team !== p.team && a.alive).length;
-  setText(el('alive-atk'), '●'.repeat(aliveAtk) + '○'.repeat(3 - aliveAtk));
-  setText(el('alive-def'), '●'.repeat(aliveDef) + '○'.repeat(3 - aliveDef));
+  const cl = (n) => Math.max(0, Math.min(3, n));
+  setText(el('alive-atk'), '●'.repeat(cl(aliveAtk)) + '○'.repeat(3 - cl(aliveAtk)));
+  setText(el('alive-def'), '●'.repeat(cl(aliveDef)) + '○'.repeat(3 - cl(aliveDef)));
 
   // Live bar pips — thin 13-round history under the bar (same data as
   // the Tab scoreboard; rebuilt only when it changes).

@@ -197,8 +197,15 @@
   /* Small viewports (B17): shrink the score bar and stack the side
      readouts below it so nothing overlaps; scoreboard fits the screen. */
   @media (max-width: 640px) {
-    #scoreboard { width: 94vw; padding: 10px 12px; }
-    .tb-score { font-size: 34px; } .sb-score { font-size: 36px; }
+    #scoreboard { width: 94vw; max-height: 92vh; overflow-y: auto; box-sizing: border-box; padding: 8px 10px; }
+    #sb-head { margin: -8px -10px 0; padding: 6px 10px 4px; }
+    .tb-score { font-size: 34px; } .sb-score { font-size: 20px; }
+    #sb-timer { font-size: 18px; } .sb-team-name { font-size: 13px; }
+    #sb-round { font-size: 11px; margin-top: 2px; }
+    #sb-bomb { margin-top: 2px; }
+    #sb-pips { margin: 4px 0 0; font-size: 12px; }
+    .sb-team td, .sb-team th { padding: 3px 5px; }
+    #sb-teams { margin-top: 4px; gap: 10px; } #sb-foot { margin-top: 4px; }
     #timer { font-size: 20px; }
     #feed { top: 104px; font-size: 11px; }
     #bomb-status { top: 104px; font-size: 11px; }
