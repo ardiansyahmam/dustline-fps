@@ -4,42 +4,63 @@
 
 import { rayVsBox } from './utils.js';
 
+// DUSTLINE — weapons: loadout desain Supra (5 senjata + pistol standar
+// gratis). Damage ABSOLUT per bagian tubuh (kepala/badan/kaki, 100 HP),
+// spread dalam radian (setengah sudut kerucut: angka Supra °/2),
+// recoil per tembakan, penetrasi armor, penalti kecepatan gerak,
+// reward kill per senjata, dan falloff jarak jauh.
+// Celah desain yang diisi: recoil (baru kualitatif -> angka), waktu reload,
+// penalti gerak, falloff, armor penetration — lihat nilai di bawah.
 export const WEAPONS = {
-  mule: {
-    id: 'mule', name: 'Mule .45', kind: 'pistol', price: 0,
-    damage: 48, headMult: 3, legMult: 0.75, rpm: 320, mag: 12, reserve: 48,
-    reload: 1.6, spread: 0.010, moveSpread: 0.02, airSpread: 0.05,
-    recoil: 0.030, auto: false, pellets: 1, range: 55,
+  p9: {
+    id: 'p9', name: 'P9 Sidearm', kind: 'pistol', price: 0,
+    damage: 20, head: 36, leg: 14, rpm: 320, mag: 12, reserve: 48,
+    reload: 1.6, spread: 0.006, moveSpread: 0.016, airSpread: 0.05,
+    recoil: 0.028, auto: false, pellets: 1, range: 55,
+    pen: 0.5, killReward: 200, speed: 1.0,
   },
-  kestrel: {
-    id: 'kestrel', name: 'Kestrel-9', kind: 'smg', price: 1200,
-    damage: 22, headMult: 3, legMult: 0.75, rpm: 750, mag: 28, reserve: 112,
-    reload: 1.9, spread: 0.021, moveSpread: 0.03, airSpread: 0.06,
+  vesper: {
+    id: 'vesper', name: 'Vesper-9', kind: 'smg', price: 1750,
+    damage: 22, head: 38, leg: 16, rpm: 750, mag: 32, reserve: 128,
+    reload: 1.9, spread: 0.007, moveSpread: 0.016, airSpread: 0.06,
     recoil: 0.011, auto: true, pellets: 1, range: 60,
+    pen: 0.5, killReward: 300, speed: 1.0,
   },
-  vulture: {
-    id: 'vulture', name: 'Vulture AR-7', kind: 'rifle', price: 2700,
-    damage: 30, headMult: 3, legMult: 0.75, rpm: 600, mag: 25, reserve: 100,
-    reload: 2.2, spread: 0.014, moveSpread: 0.025, airSpread: 0.055,
+  talon: {
+    id: 'talon', name: 'Talon-5', kind: 'rifle', price: 2500,
+    damage: 27, head: 54, leg: 20, rpm: 600, mag: 30, reserve: 90,
+    reload: 2.2, spread: 0.005, moveSpread: 0.011, airSpread: 0.055,
     recoil: 0.016, auto: true, pellets: 1, range: 85,
+    pen: 0.65, killReward: 200, speed: 0.97,
   },
-  breacher: {
-    id: 'breacher', name: 'Breacher-12', kind: 'shotgun', price: 1100,
-    damage: 11, headMult: 2.5, legMult: 0.7, rpm: 75, mag: 6, reserve: 24,
-    reload: 2.6, spread: 0.05, moveSpread: 0.03, airSpread: 0.06,
+  cinder: {
+    id: 'cinder', name: 'Cinder .50', kind: 'magnum', price: 650,
+    damage: 48, head: 90, leg: 36, rpm: 240, mag: 6, reserve: 24,
+    reload: 2.4, spread: 0.004, moveSpread: 0.022, airSpread: 0.06,
+    recoil: 0.07, auto: false, pellets: 1, range: 90,
+    pen: 0.85, killReward: 300, speed: 0.94,
+  },
+  brine: {
+    id: 'brine', name: 'Brine-12', kind: 'shotgun', price: 1850,
+    damage: 6, head: 8, leg: 4, rpm: 78, mag: 8, reserve: 32,
+    reload: 2.8, spread: 0.057, moveSpread: 0.01, airSpread: 0.06,
     recoil: 0.06, auto: false, pellets: 8, range: 26,
+    pen: 0.4, killReward: 500, speed: 0.95, falloff: 'shotgun',
   },
-  dune: {
-    id: 'dune', name: 'Dune-47', kind: 'rifle', price: 2500,
-    damage: 36, headMult: 3, legMult: 0.75, rpm: 545, mag: 30, reserve: 90,
-    reload: 2.4, spread: 0.018, moveSpread: 0.03, airSpread: 0.06,
-    recoil: 0.024, auto: true, pellets: 1, range: 85,
+  rift: {
+    id: 'rift', name: 'Rift-47', kind: 'rifle', price: 2850,
+    damage: 31, head: 62, leg: 23, rpm: 540, mag: 30, reserve: 90,
+    reload: 2.4, spread: 0.008, moveSpread: 0.017, airSpread: 0.06,
+    recoil: 0.026, auto: true, pellets: 1, range: 85,
+    pen: 0.6, killReward: 200, speed: 0.95,
   },
 };
 
 export const ARMOR_PRICE = 650;   // vest: +50 armor
-export const FRAG_PRICE = 300;
-export const SMOKE_PRICE = 300;
+export const HELMET_PRICE = 350;  // helmet: headshot -35% while worn
+export const KIT_PRICE = 400;     // defuse kit: defuse 4 dtk (bukan 6)
+export const BLINK_PRICE = 250;   // flashbang
+export const HAZE_PRICE = 300;    // smoke
 
 export function makeWeapon(id) {
   const def = WEAPONS[id];
@@ -130,23 +151,51 @@ function hitAgent(ox, oy, oz, dx, dy, dz, maxDist, a) {
   return best;
 }
 
-// Apply damage. Returns 'kill' | 'hit' | 'none'.
-export function applyDamage(state, target, raw, part, attacker) {
+// Falloff jarak jauh (celah desain, nilai isi sendiri):
+// shotgun turun tajam setelah 7 m (x0,5) dan 14 m (x0,25); senjata lain
+// x0,85 setelah 25 m dan x0,7 setelah 40 m.
+function falloffMult(def, dist) {
+  if (def.falloff === 'shotgun') {
+    if (dist > 14) return 0.25;
+    if (dist > 7) return 0.5;
+    return 1;
+  }
+  if (dist > 40) return 0.7;
+  if (dist > 25) return 0.85;
+  return 1;
+}
+
+// Apply damage. Returns 'kill' | 'hit' | 'none'. `raw` is the body damage
+// (kept for callers without a weapon); with a weapon the absolute
+// head/body/leg values from the def are used instead.
+export function applyDamage(state, target, raw, part, attacker, dist = 0) {
   if (!target.alive) return 'none';
   const def = attacker && attacker.weapon ? attacker.weapon.def : null;
   let dmg = raw;
   if (def) {
-    if (part === 'head') dmg *= def.headMult;
-    else if (part === 'legs') dmg *= def.legMult;
+    if (part === 'head') dmg = def.head;
+    else if (part === 'legs') dmg = def.leg;
+    else dmg = def.damage;
+    dmg *= falloffMult(def, dist);
+    // Helmet: headshot -35% while worn (helmet does not break).
+    if (part === 'head' && target.helmet) dmg *= 0.65;
   }
-  // Armor soaks half the damage while it lasts.
+  // Armor: penetration — only (1 - pen) of the damage can be absorbed.
+  // (pen 0,5 = perilaku lama: setengah diserap.)
   if (target.armor > 0) {
-    const soaked = Math.min(target.armor, dmg * 0.5);
+    const pen = def ? def.pen : 0.5;
+    const soaked = Math.min(target.armor, dmg * (1 - pen));
     target.armor -= soaked;
     dmg -= soaked;
   }
   target.hp -= dmg;
   target.flash = 0.18;
+  // Screen shake ringan saat pemain kena tembak.
+  if (target.isPlayer) state.cameraShake = Math.max(state.cameraShake, 0.35);
+  if (attacker) {
+    attacker.dmg += Math.round(dmg);
+    if (part === 'head') attacker.hs++;
+  }
   if (attacker && attacker.isPlayer) {
     state.hitmark = 0.25;
     state.hitmarkKill = target.hp <= 0;
@@ -191,14 +240,26 @@ export function buyItem(state, itemId) {
     if (r === 'ok') p.armor = Math.min(100, p.armor + 50);
     return r;
   }
-  if (itemId === 'frag') {
-    const r = spend(FRAG_PRICE);
-    if (r === 'ok') p.grenades.frag = Math.min(2, p.grenades.frag + 1);
+  if (itemId === 'helmet') {
+    if (p.helmet) return 'Helm sudah dipakai.';
+    const r = spend(HELMET_PRICE);
+    if (r === 'ok') p.helmet = true;
     return r;
   }
-  if (itemId === 'smoke') {
-    const r = spend(SMOKE_PRICE);
-    if (r === 'ok') p.grenades.smoke = Math.min(2, p.grenades.smoke + 1);
+  if (itemId === 'kit') {
+    if (p.kit) return 'Kit sudah dimiliki.';
+    const r = spend(KIT_PRICE);
+    if (r === 'ok') p.kit = true;
+    return r;
+  }
+  if (itemId === 'blink') {
+    const r = spend(BLINK_PRICE);
+    if (r === 'ok') p.grenades.blink = Math.min(2, p.grenades.blink + 1);
+    return r;
+  }
+  if (itemId === 'haze') {
+    const r = spend(HAZE_PRICE);
+    if (r === 'ok') p.grenades.haze = Math.min(2, p.grenades.haze + 1);
     return r;
   }
   const def = WEAPONS[itemId];

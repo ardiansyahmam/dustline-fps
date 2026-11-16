@@ -15,7 +15,7 @@ export function createInput(canvas, state) {
       case 'KeyS': case 'ArrowDown': input.fwd = -1; break;
       case 'KeyA': case 'ArrowLeft': input.strafe = -1; break;
       case 'KeyD': case 'ArrowRight': input.strafe = 1; break;
-      case 'ShiftLeft': case 'ShiftRight': input.slow = true; break;
+      case 'ShiftLeft': case 'ShiftRight': input.sprint = true; break;
       case 'ControlLeft': case 'KeyC': input.crouch = true; break;
       case 'Space': input.jump = true; e.preventDefault(); break;
       case 'KeyR': if (!e.repeat) input.reload = true; break;
@@ -33,7 +33,7 @@ export function createInput(canvas, state) {
       case 'KeyS': case 'ArrowDown': if (input.fwd === -1) input.fwd = 0; break;
       case 'KeyA': case 'ArrowLeft': if (input.strafe === -1) input.strafe = 0; break;
       case 'KeyD': case 'ArrowRight': if (input.strafe === 1) input.strafe = 0; break;
-      case 'ShiftLeft': case 'ShiftRight': input.slow = false; break;
+      case 'ShiftLeft': case 'ShiftRight': input.sprint = false; break;
       case 'ControlLeft': case 'KeyC': input.crouch = false; break;
       case 'Space': input.jump = false; break;
       case 'KeyE': input.interact = false; break;
@@ -59,7 +59,7 @@ export function createInput(canvas, state) {
   }
   function blur() {
     input.fwd = 0; input.strafe = 0; input.fire = false; input.jump = false;
-    input.slow = false; input.crouch = false; input.interact = false;
+    input.sprint = false; input.crouch = false; input.interact = false;
   }
 
   window.addEventListener('keydown', keyDown);

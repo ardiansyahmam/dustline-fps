@@ -1,8 +1,18 @@
 // DUSTLINE — map: an abandoned solar plant in a dust basin.
-// Layout (metres, origin at centre, north = -z):
+// Layout (metres, origin at centre, north = -z), desain Supra:
 //   x in [-32,32], z in [-22,22]. Attackers spawn south, defenders north.
-//   Site A "Solar Array" NE, Site B "Pump House" NW, mid lane centre,
-//   north rotation lane behind the sites, south lane along the spawn side.
+//   A SOLAR ARRAY (NE): lapangan panel surya terbuka, barisan panel
+//     rendah, Relay Hut (control hut) sebagai hard cover; masuk lewat
+//     East Service (flank timur) atau ramp dari Mid.
+//   B PUMP HOUSE (NW): lebih rapat, tangki silinder, pipa besar, platform
+//     kontrol; masuk lewat Pump Duct atau Cooling Trench (flank barat).
+//   MID — Inverter Court + gantry: sightline panjang terpecah inverter
+//     dan gantry; choke Mid gantry di celah tengah.
+//   Rotasi A<->B: Solar Spine (jalur utara, lebih panjang, terekspos)
+//     dan Pump Duct (lebih cepat, langkah di atas grate TERDENGAR).
+//   Choke utama: A Gate, Mid gantry, mulut Pump Duct.
+//   TIDAK ADA site yang terlihat langsung dari spawn penyerang
+//     (divider wall menutup sightline dari selatan).
 // All geometry is built from code (BoxGeometry + canvas textures); repeated
 // props are spread with InstancedMesh, one draw call per part type.
 
@@ -18,6 +28,23 @@ export const MAP = {
     atk: [[0, 18], [-3, 19], [3, 19]],
     def: [[22, -14], [-22, -14], [0, -16]],
   },
+};
+
+// Named zones (desain Supra): rotation routes, choke points, the
+// audible grate corridor. The sim reads `duct` for footstep hearing.
+export const ZONES = {
+  spine: { name: 'Solar Spine', waypoints: [11, 17, 13] }, // north lane, long + exposed
+  duct: { name: 'Pump Duct', x0: -8, z0: -11, x1: 8, z1: -5, waypoints: [10, 14, 12] }, // fast route, grate is loud
+  chokes: {
+    aGate: { name: 'A Gate', x: 24, z: -2 },
+    midGantry: { name: 'Mid gantry', x: 0, z: -2 },
+    ductMouth: { name: 'Mulut Pump Duct', x: 0, z: -5 },
+  },
+  entries: {
+    A: ['East Service (wp 8→12)', 'Mid ramp (wp 14→12)'],
+    B: ['Pump Duct (wp 14→10)', 'Cooling Trench (wp 7→10)'],
+  },
+  mid: { name: 'Inverter Court', x: 0, z: 0 },
 };
 
 // Solid boxes: {x0,z0,x1,z1,y1} (y0 is always 0). Used for movement
@@ -297,10 +324,19 @@ export function buildMap(THREE, scene, textures, rng) {
   for (const b of COLLIDERS.slice(22, 24)) scene.add(boxMesh(THREE, rust, b.x0, b.z0, b.x1, b.z1, b.y1));
   const beam = boxMesh(THREE, rust, -7.5, 3.5, 7.5, 4.5, 5.4, 5);
   scene.add(beam);
-  // Pipe rack + inverters
+  // Pipe rack + inverters (site B platform kontrol, site A inverter)
   scene.add(boxMesh(THREE, rust, -18, -18, -16, -12, 1.8));
   scene.add(boxMesh(THREE, darkMat, 26, -12, 28, -10, 1.6));
   scene.add(boxMesh(THREE, darkMat, 20, -6, 22, -4, 1.6));
+  // Inverter Court: inverter boxes ON TOP of the mid divider walls
+  // (visual only — no new collision, players never reach that height).
+  scene.add(boxMesh(THREE, darkMat, -16, -2.8, -12, -1.2, 3.4, 2.6));
+  scene.add(boxMesh(THREE, darkMat, 12, -2.8, 16, -1.2, 3.4, 2.6));
+  // Pump Duct grate: hazard strip on the ground (visual marker of the
+  // loud corridor — footsteps here are heard 35 m away).
+  const grate = boxMesh(THREE, hazardMat, -8, -9.5, 8, -6.5, 0.06, 0);
+  grate.castShadow = false;
+  scene.add(grate);
 
   // Distant dunes outside the walls (silhouettes in the haze)
   for (let i = 0; i < 10; i++) {
@@ -320,5 +356,5 @@ export function buildMap(THREE, scene, textures, rng) {
   markB.position.set(-25, 6.5, -10);
   scene.add(markB);
 
-  return { colliders: COLLIDERS, waypoints: WAYPOINTS, sites: MAP.sites, spawns: MAP.spawns };
+  return { colliders: COLLIDERS, waypoints: WAYPOINTS, sites: MAP.sites, spawns: MAP.spawns, zones: ZONES };
 }

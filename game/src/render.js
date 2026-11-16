@@ -6,9 +6,20 @@
 import * as THREE from 'three';
 import { buildMap, makeTextures } from './map.js';
 import { mulberry32 } from './utils.js';
+import { loadCharacter, cloneCharacter } from './gltf.js';
 
 const TEAM_COLOR = [0x2fa8a0, 0xc25a2e];   // ATK teal, DEF rust
 const TEAM_DARK = [0x1d5a56, 0x7a3016];
+const MODEL_URL = {
+  pilot: 'models/aircrew-pilot-e6b732.glb',
+  knight: 'models/armoured-knight-hero-07121f.glb',
+  monk: 'models/buddhist-monk-39f498.glb',
+};
+// Which Polyfork character each bot wears. Enemies are all different;
+// the two allies share the pilot, told apart by team accents.
+const MODEL_FOR_AGENT = { 1: 'pilot', 2: 'pilot', 3: 'knight', 4: 'pilot', 5: 'monk' };
+const TARGET_HEIGHT = 1.78; // normalise every model to this height so the
+// analytic hitboxes (head 1.45-1.78) keep working.
 
 export function createRenderer(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -59,6 +70,7 @@ export function createRenderer(canvas) {
 }
 
 // ---- bot figure: boxes only, team-coloured, ~6 meshes each ----
+// Kept as the fallback while the GLB models load (or if a fetch fails).
 export function createBotFigure(THREE, team) {
   const color = TEAM_COLOR[team];
   const dark = TEAM_DARK[team];
@@ -86,6 +98,74 @@ export function createBotFigure(THREE, team) {
   g.add(torso, chest, head, visor, legL, legR, gun, pack);
   g.userData = { torso, head, legL, legR, gun, bodyMat, walkPhase: 0 };
   return g;
+}
+
+function makeNametag(THREE, name, team) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.font = '700 34px system-ui, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 7; g.strokeStyle = 'rgba(0,0,0,0.85)';
+  g.strokeText(name, 128, 32);
+  g.fillStyle = team === 0 ? '#5fe8de' : '#ffb08a';
+  g.fillText(name, 128, 32);
+  const tex = new THREE.CanvasTexture(c);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  spr.scale.set(1.5, 0.375, 1);
+  spr.position.y = 2.06;
+  return spr;
+}
+
+// ---- bot figure from a Polyfork GLB character (skinned, animated) ----
+export function createGlbFigure(THREE, model, team, name) {
+  const clone = cloneCharacter(THREE, model);
+  const s = TARGET_HEIGHT / clone.height;
+  const outer = new THREE.Group();
+  const body = new THREE.Group(); // flinch lean + breathing live here
+  const modelGroup = clone.group;
+  modelGroup.scale.setScalar(s);
+  body.add(modelGroup);
+  // Held gun (box, like the old figure) + team accent stripe.
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.55, metalness: 0.55 });
+  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.13, 0.72), darkMat);
+  gun.position.set(0.24, 1.22, 0.32); gun.castShadow = true;
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.03, 0.4),
+    new THREE.MeshStandardMaterial({ color: TEAM_COLOR[team], roughness: 0.5, metalness: 0.3 }));
+  stripe.position.set(0.24, 1.29, 0.32);
+  body.add(gun, stripe);
+  // Bot muzzle flash at the gun tip.
+  const flashMat = new THREE.MeshBasicMaterial({ color: 0xffc860, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3), flashMat);
+  flash.position.set(0.24, 1.24, 0.72);
+  body.add(flash);
+  outer.add(body);
+  // Name tag + team ring (stay upright, on the outer group).
+  const tag = makeNametag(THREE, name, team);
+  outer.add(tag);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.58, 32),
+    new THREE.MeshBasicMaterial({ color: TEAM_COLOR[team], transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.02;
+  outer.add(ring);
+
+  const mixer = new THREE.AnimationMixer(modelGroup);
+  const actions = {};
+  for (const key of ['Idle', 'Walk', 'Run']) {
+    if (clone.clips[key]) {
+      const a = mixer.clipAction(clone.clips[key]);
+      a.play();
+      a.weight = key === 'Idle' ? 1 : 0;
+      actions[key.toLowerCase()] = a;
+    }
+  }
+  const mats = [];
+  modelGroup.traverse((o) => { if (o.isSkinnedMesh) mats.push(o.material); });
+  outer.userData = {
+    kind: 'glb', mixer, actions, curAction: 'idle', body, mats,
+    flash, flashMat, tag, ring, flinchT: 0, prevFlash: 0,
+  };
+  return outer;
 }
 
 // ---- viewmodel: the player's own gun, boxes on the camera ----
@@ -167,13 +247,33 @@ export function createWorld(THREE, canvas, seed) {
   const boomLight = new THREE.PointLight(0xff8020, 0, 40, 1.6);
   base.scene.add(boom, boomLight);
 
-  return {
+  const world = {
     ...base, mapData, viewmodel,
     figures: new Map(),           // agent.id -> figure group
     tracerPos, tracerCol, tracerGeo, tracers, tracerLife: new Float32Array(TRACER_MAX), tracerNext: 0,
     smokeMesh, spike, spikeLamp, spikeLight, boom, boomLight, boomT: -1,
     prevYaw: 0, bobPhase: 0,
+    models: null, modelsReady: false,
   };
+  // Load the three Polyfork characters in the background; figures start
+  // as boxes and swap to GLB the moment the models arrive (see syncWorld).
+  // A failed fetch leaves models null and the boxes stay — the game still
+  // runs. Screenshots wait for modelsReady (see main.js).
+  world.modelsPromise = (async () => {
+    try {
+      const [pilot, knight, monk] = await Promise.all([
+        loadCharacter(THREE, MODEL_URL.pilot),
+        loadCharacter(THREE, MODEL_URL.knight),
+        loadCharacter(THREE, MODEL_URL.monk),
+      ]);
+      world.models = { pilot, knight, monk };
+    } catch (e) {
+      console.error('[models] GLB load failed, keeping box figures:', e);
+      world.models = null;
+    }
+    world.modelsReady = true;
+  })();
+  return world;
 }
 
 export function addTracer(world, x0, y0, z0, x1, y1, z1) {
@@ -239,20 +339,60 @@ export function syncWorld(world, THREE, state, dt) {
       world.figures.set(a.id, fig);
       world.scene.add(fig);
     }
+    // Swap a box figure for its GLB character once the models are in.
+    if (world.models && fig.userData.kind !== 'glb') {
+      world.scene.remove(fig);
+      fig = createGlbFigure(THREE, world.models[MODEL_FOR_AGENT[a.id]], a.team, a.name);
+      world.figures.set(a.id, fig);
+      world.scene.add(fig);
+    }
     fig.visible = true;
     const u = fig.userData;
     if (a.alive) {
       fig.position.set(a.x, a.y, a.z);
       fig.rotation.set(0, a.yaw + Math.PI, 0);
-      const moving = Math.hypot(a.vx, a.vz);
-      u.walkPhase += moving * dt * 2.6;
-      const swing = Math.sin(u.walkPhase) * 0.45 * Math.min(1, moving / 3);
-      u.legL.rotation.x = swing; u.legR.rotation.x = -swing;
-      u.bodyMat.emissive.setHex(a.flash > 0 ? 0x881111 : 0x000000);
+      if (u.kind === 'glb') {
+        u.tag.visible = true;
+        u.ring.visible = true;
+        // Animation: idle / walk / run by speed, weights lerped.
+        const moving = Math.hypot(a.vx, a.vz);
+        const want = moving > 3.2 ? 'run' : moving > 0.5 ? 'walk' : 'idle';
+        if (want !== u.curAction && u.actions[want]) u.curAction = want;
+        for (const k of Object.keys(u.actions)) {
+          const act = u.actions[k];
+          const target = k === u.curAction ? 1 : 0;
+          act.weight += (target - act.weight) * Math.min(1, dt * 8);
+        }
+        u.mixer.update(dt);
+        // Breathing while idle.
+        u.body.scale.y = 1 + (u.curAction === 'idle' ? Math.sin(state.time * 2 + a.id * 1.7) * 0.012 : 0);
+        // Flinch: lean back briefly when a shot lands.
+        if (a.flash > 0 && u.prevFlash <= 0) u.flinchT = 0.18;
+        u.prevFlash = a.flash;
+        u.flinchT = Math.max(0, u.flinchT - dt);
+        u.body.rotation.x = u.flinchT > 0 ? -0.14 * (u.flinchT / 0.18) : 0;
+        // Hit flash: tint the character's own materials red.
+        for (const m of u.mats) m.emissive.setHex(a.flash > 0 ? 0x881111 : 0x000000);
+        // Bot muzzle flash at the gun tip, right after a shot.
+        const recent = state.time - a.lastShot < 0.06;
+        u.flashMat.opacity = recent ? 0.9 : 0;
+        if (recent) u.flash.rotation.z = Math.random() * Math.PI;
+      } else {
+        const moving = Math.hypot(a.vx, a.vz);
+        u.walkPhase += moving * dt * 2.6;
+        const swing = Math.sin(u.walkPhase) * 0.45 * Math.min(1, moving / 3);
+        u.legL.rotation.x = swing; u.legR.rotation.x = -swing;
+        u.bodyMat.emissive.setHex(a.flash > 0 ? 0x881111 : 0x000000);
+      }
     } else {
-      // fallen: tip over once, stay down
+      // Fallen: tip over once, stay down.
       fig.rotation.x = Math.max(fig.rotation.x - dt * 6, -Math.PI / 2 + 0.12);
       fig.position.y = Math.max(fig.position.y - dt * 0.4, 0.12);
+      if (u.kind === 'glb') {
+        u.tag.visible = false;
+        u.ring.visible = false;
+        u.flashMat.opacity = 0;
+      }
     }
   }
 
@@ -270,14 +410,15 @@ export function syncWorld(world, THREE, state, dt) {
   }
   if (tracerDirty) world.tracerGeo.attributes.color.needsUpdate = true;
 
-  // --- smoke puffs ---
+  // --- smoke puffs (Haze: radius 5 m) ---
   const dummy = new THREE.Object3D();
   for (let i = 0; i < 6; i++) {
     const s = state.smokes[i];
     if (s) {
       const grow = 1 + (1 - s.life / s.maxLife) * 2.4;
+      const R = (s.r || 3.4) * 0.94;
       dummy.position.set(s.x, s.y + 0.8, s.z);
-      dummy.scale.set(3.2 * grow, 2.2 * grow, 3.2 * grow);
+      dummy.scale.set(R * grow, R * 0.68 * grow, R * grow);
       dummy.rotation.set(0, 0, 0);
     } else {
       dummy.position.set(0, -10, 0);

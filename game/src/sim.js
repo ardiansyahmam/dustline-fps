@@ -2,15 +2,17 @@
 // grenades, spike plant/defuse, rounds and economy. Render and HUD only
 // read the state; this module is the only writer of gameplay state.
 
-import { PHASE, TEAM, ROUND_TIME, BUY_TIME, END_TIME, WIN_ROUNDS, PLANT_TIME, DEFUSE_TIME, SPIKE_TIME, START_MONEY, KILL_REWARD, WIN_REWARD, LOSS_REWARD, LOSS_STREAK_BONUS, PLANT_REWARD, createState, createAgent, addFeed, setBanner } from './state.js';
-import { circleVsAABB, clamp } from './utils.js';
+import { PHASE, TEAM, ROUND_TIME, BUY_TIME, END_TIME, WIN_ROUNDS, PLANT_TIME, DEFUSE_TIME, DEFUSE_TIME_KIT, SPIKE_TIME, START_MONEY, MONEY_CAP, KILL_REWARD, WIN_REWARD, WIN_REWARD_DET, LOSS_REWARD, LOSS_STREAK_BONUS, LOSS_REWARD_MAX, PLANT_REWARD, DEFUSE_REWARD, createState, createAgent, addFeed, setBanner } from './state.js';
+import { circleVsAABB, clamp, hasLOS } from './utils.js';
 import { WEAPONS, makeWeapon, canFire, fireWeapon, applyDamage, startReload, finishReload } from './weapons.js';
-import { createBrain, updateBot, botHeardShot } from './bots.js';
+import { createBrain, updateBot, botHeardShot, botHeardSteps } from './bots.js';
 
 export const STEP = 1 / 60;
 
-const PLAYER_SPEED = 4.4;
-const PLAYER_SLOW = 2.6;
+// Game-feel (desain Supra, kiblat Point Blank): jalan 4,2 m/s,
+// sprint 6 m/s (Shift), jongkok 2,1 m/s; akselerasi WASD; collision kapsul.
+const PLAYER_SPEED = 4.2;
+const PLAYER_SPRINT = 6;
 const PLAYER_CROUCH = 2.1;
 const BOT_SPEED = 3.6;
 const RADIUS = 0.38;
@@ -28,7 +30,7 @@ export function createSim(state, mapData, rng) {
 
   // Player + 2 ally bots vs 3 enemy bots.
   const player = createAgent(0, 'You', TEAM.ATK, true, false);
-  player.weapons[1] = makeWeapon('mule');
+  player.weapons[1] = makeWeapon('p9');
   player.weapons[0] = null;
   player.weapon = player.weapons[1];
   player.slot = 1;
@@ -45,20 +47,26 @@ export function createSim(state, mapData, rng) {
   dune.brain = createBrain('def', 16);
   vex.brain = createBrain('def', 15);
   hollow.brain = createBrain('def', 17);
-  rook.weapon = makeWeapon('vulture');
-  sable.weapon = makeWeapon('kestrel');
-  dune.weapon = makeWeapon('vulture');
-  vex.weapon = makeWeapon('dune');
-  hollow.weapon = makeWeapon('kestrel');
+  // Bot mulai dengan pistol; senjata "dibeli" tiap ronde (botBuy).
+  for (const b of [rook, sable, dune, vex, hollow]) b.weapon = makeWeapon('p9');
   return state;
 }
 
 export function startMatch(state) {
   state.score = [0, 0];
+  state.roundHistory = [];
   state.lossStreak = [0, 0];
   state.round = 1;
   state.money = START_MONEY;
   state.matchWinner = -1;
+  state.swapped = false;
+  // Pulihkan sisi awal (pemain + Rook/Sable penyerang).
+  state.player.team = TEAM.ATK;
+  for (const a of state.agents) {
+    if (a.isBot) { a.team = a.id <= 2 ? TEAM.ATK : TEAM.DEF; a.brain.side = a.id <= 2 ? 'atk' : 'def'; }
+    a.armor = 0; a.helmet = false; a.kit = false;
+  }
+  for (const a of state.agents) { a.kills = 0; a.deaths = 0; a.dmg = 0; a.hs = 0; }
   startRound(state);
 }
 
@@ -72,32 +80,74 @@ function placeAgents(state) {
     a.x = s[0]; a.z = s[1]; a.y = 0; a.vx = 0; a.vy = 0; a.vz = 0;
     a.yaw = 0; // face north (-z), toward mid and the sites
     a.pitch = 0; a.hp = 100; a.alive = true;
-    a.reloading = false; a.spread = 0; a.recoil = 0;
+    a.reloading = false; a.spread = 0; a.recoil = 0; a.blindUntil = 0;
   });
   def.forEach((a, i) => {
     const s = defSpawns[i % defSpawns.length];
     a.x = s[0]; a.z = s[1]; a.y = 0; a.vx = 0; a.vy = 0; a.vz = 0;
     a.yaw = Math.PI; // face south (+z), toward the attackers
     a.pitch = 0; a.hp = 100; a.alive = true;
-    a.reloading = false; a.spread = 0; a.recoil = 0;
+    a.reloading = false; a.spread = 0; a.recoil = 0; a.blindUntil = 0;
   });
-  // Bot site assignments alternate by round.
-  const atkBots = [state.agents[1], state.agents[2]];
-  atkBots[0].brain.site = state.round % 2 === 1 ? 'A' : 'B';
-  atkBots[1].brain.site = state.round % 2 === 1 ? 'B' : 'A';
-  atkBots.forEach((b) => { b.brain.mode = 'hold'; b.brain.pathI = 99; b.brain.holdT = 0; });
-  const defBots = [state.agents[3], state.agents[4], state.agents[5]];
-  defBots[0].brain.site = 'A';
-  defBots[1].brain.site = 'B';
-  defBots[2].brain.site = state.round % 2 === 1 ? 'A' : 'B';
-  defBots.forEach((b) => { b.brain.mode = 'hold'; b.brain.holdT = 0; });
+  // Role taktis: 5 role berbeda per ronde, digilir (entry/support/
+  // mid-control/anchor/lurker). Bot id 1-5 + ronde = permutasi.
+  const ROLES = ['entry', 'support', 'mid', 'anchor', 'lurker'];
+  for (const b of state.agents) {
+    if (!b.isBot) continue;
+    b.brain.role = ROLES[(b.id + state.round) % 5];
+  }
+  // Penyerang pilih site dari intel: site yang PALING LAMA tidak
+  // terlihat/terdengar defender-nya (paling sepi = paling lemah).
+  // Lurker pergi ke site satunya lewat rute panjang (Solar Spine).
+  const chosen = state.intel.A <= state.intel.B ? 'A' : 'B';
+  const other = chosen === 'A' ? 'B' : 'A';
+  for (const b of atk) {
+    if (!b.isBot) continue;
+    b.brain.site = b.brain.role === 'lurker' ? other : chosen;
+    b.brain.mode = 'hold'; b.brain.pathI = 99; b.brain.holdT = 0; b.brain.relocate = false;
+  }
+  // Bertahan: 1 anchor per site + rotator. (Anchor jaga site yang
+  // ditugaskan; rotator menunggu di mid/jalur lalu merespons suara.)
+  def.forEach((b, i) => {
+    if (!b.isBot) return;
+    b.brain.site = i === 0 ? 'A' : i === 1 ? 'B' : (state.round % 2 === 1 ? 'A' : 'B');
+    b.brain.mode = 'hold'; b.brain.holdT = 0; b.brain.relocate = false;
+  });
+}
+
+// Perilaku beli bot (celah desain, nilai isi sendiri): ronde 1 semua
+// pistol; ronde 2+ tim yang menang ronde lalu beli rifle sesuai role,
+// yang kalah beli SMG; ronde 3+ tim menang pakai vest; defender punya
+// peluang 30% membawa defuse kit sejak ronde 3 (defuse 4 dtk).
+function botBuy(state, bot) {
+  const r = state.round;
+  if (r === 1) { bot.weapon = makeWeapon('p9'); return; }
+  const won = state.roundHistory.length > 0
+    && state.roundHistory[state.roundHistory.length - 1] === bot.team;
+  const byRole = { entry: 'rift', support: 'talon', mid: 'vesper', anchor: 'brine', lurker: 'talon' };
+  bot.weapon = makeWeapon(won ? (byRole[bot.brain.role] || 'talon') : 'vesper');
+  if (r >= 3 && won && bot.armor < 50) bot.armor = 50;
+  bot.kit = bot.team === TEAM.DEF && r >= 3 && state.rng() < 0.3;
 }
 
 export function startRound(state) {
+  // Ganti sisi setelah ronde 6 (best-of-13): pemain + rekan jadi DEF,
+  // musuh jadi ATK. TIDAK ADA overtime: bila 6-6, ronde ke-13 langsung
+  // jadi penentu (first-to-7).
+  if (state.round === 7 && !state.swapped) {
+    state.swapped = true;
+    for (const a of state.agents) a.team = 1 - a.team;
+    for (const b of state.agents) if (b.isBot) b.brain.side = 1 - b.brain.side;
+  }
   placeAgents(state);
   state.phase = PHASE.BUY;
   state.phaseT = BUY_TIME;
-  state.spike = { state: 'carried', carrier: state.player, site: null, x: 0, y: 0, z: 0, progress: 0, timer: 0, beepAt: 0 };
+  // Spike dibawa pemain bila ia penyerang; bila bertahan, dibawa bot
+  // penyerang ber-role entry (sisanya cover 2 akses site).
+  const carrier = state.player.team === TEAM.ATK ? state.player
+    : state.agents.find((a) => a.isBot && a.team === TEAM.ATK && a.brain.role === 'entry')
+    || state.agents.find((a) => a.isBot && a.team === TEAM.ATK);
+  state.spike = { state: 'carried', carrier, defuser: null, site: null, x: 0, y: 0, z: 0, progress: 0, timer: 0, beepAt: 0 };
   state.smokes = [null, null, null, null, null, null];
   state.frags = [];
   state.feed = [];
@@ -105,7 +155,9 @@ export function startRound(state) {
   state.roundWinner = -1;
   state.roundReason = '';
   state.camAgent = state.player;
-  setBanner(state, `RONDE ${state.round}`, 'Fase beli — tekan B untuk belanja', 3);
+  for (const b of state.agents) if (b.isBot) botBuy(state, b);
+  if (state.round === 7) setBanner(state, 'RONDE 7 — GANTI SISI', 'Kamu sekarang bertahan — jaga kedua site', 3);
+  else setBanner(state, `RONDE ${state.round}`, 'Fase beli — tekan B untuk belanja', 3);
 }
 
 // ---- movement ----
@@ -160,7 +212,10 @@ function updatePlayer(state, dt) {
   input.lookDX = 0; input.lookDY = 0;
   p.crouched = input.crouch;
   p.strafe = input.strafe;
-  const speed = input.crouch ? PLAYER_CROUCH : input.slow ? PLAYER_SLOW : PLAYER_SPEED;
+  // Sprint (Shift) 6 m/s, jalan 4,2, jongkok 2,1 — dikali penalti
+  // kecepatan senjata (SMG penuh, rifle berat sedikit lebih lambat).
+  const wSpeed = p.weapon ? p.weapon.def.speed : 1;
+  const speed = (input.crouch ? PLAYER_CROUCH : input.sprint ? PLAYER_SPRINT : PLAYER_SPEED) * wSpeed;
   const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
   const rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
   const wx = (fx * input.fwd + rx * input.strafe) * speed;
@@ -182,7 +237,7 @@ function doShoot(state, shooter) {
       x1: r.point[0], y1: r.point[1], z1: r.point[2],
     });
     if (r.hit) {
-      const res = applyDamage(state, r.hit, shooter.weapon.def.damage, r.part, shooter);
+      const res = applyDamage(state, r.hit, shooter.weapon.def.damage, r.part, shooter, r.dist);
       if (res === 'kill') onKill(state, shooter, r.hit);
       else state.sfx.push(shooter.isPlayer ? 'hit' : 'hitFar');
     }
@@ -193,12 +248,26 @@ function doShoot(state, shooter) {
 }
 
 function onKill(state, attacker, victim) {
+  if (attacker) attacker.kills++;
+  victim.deaths++;
   addFeed(state, `${attacker.name} ▸ ${victim.name}`);
   if (attacker.isPlayer) {
-    state.money += KILL_REWARD;
+    // Reward kill mengikuti senjata (Vesper 300, Talon/Rift 200,
+    // Magnum 300, Brine 500), dibatasi cap uang $10.000.
+    const rw = (attacker.weapon && attacker.weapon.def.killReward) || KILL_REWARD;
+    state.money = Math.min(MONEY_CAP, state.money + rw);
     state.sfx.push('kill');
   }
   if (victim.isPlayer) state.sfx.push('death');
+  // Callout: anchor bertahan tewas -> rekan menyelidiki posisi itu
+  // (picu rotasi, bukan menunggu buta).
+  if (victim.isBot && victim.brain && victim.brain.role === 'anchor') {
+    for (const a of state.agents) {
+      if (a.isBot && a.team === victim.team && a.alive && a.brain) {
+        a.brain.lastSeenX = victim.x; a.brain.lastSeenZ = victim.z; a.brain.lastSeenT = state.time;
+      }
+    }
+  }
   // Spike carrier drops the spike.
   if (state.spike.carrier === victim) {
     state.spike.state = 'dropped';
@@ -253,7 +322,7 @@ function updateSpike(state, dt) {
       sp.state = 'planted';
       sp.timer = SPIKE_TIME;
       sp.progress = 0;
-      state.money += PLANT_REWARD;
+      if (c.isPlayer) state.money = Math.min(MONEY_CAP, state.money + PLANT_REWARD);
       addFeed(state, 'Spike ditanam di Site ' + sp.site);
       setBanner(state, 'SPIKE DITANAM', 'Site ' + sp.site + ' — pertahankan sampai meledak', 3);
       state.sfx.push('planted');
@@ -261,12 +330,14 @@ function updateSpike(state, dt) {
     return;
   }
   if (sp.state === 'defusing') {
-    const d = state.agents.find((a) => a.brain && a.brain.mode === 'defuse' && a.alive);
-    const ok = d && Math.hypot(d.x - sp.x, d.z - sp.z) < 2.4;
-    if (!ok) { sp.state = 'planted'; sp.progress = 0; return; }
-    sp.progress += dt / DEFUSE_TIME;
+    const d = sp.defuser;
+    const ok = d && d.alive && Math.hypot(d.x - sp.x, d.z - sp.z) < 2.4;
+    if (!ok) { sp.state = 'planted'; sp.progress = 0; sp.defuser = null; return; }
+    // Defuse 6 dtk, 4 dtk bila membawa kit.
+    sp.progress += dt / (d.kit ? DEFUSE_TIME_KIT : DEFUSE_TIME);
     if (sp.progress >= 1) {
       sp.state = 'defused';
+      if (d.isPlayer) state.money = Math.min(MONEY_CAP, state.money + DEFUSE_REWARD);
       endRound(state, TEAM.DEF, 'Spike berhasil dijinakkan');
     }
     return;
@@ -302,16 +373,16 @@ function updateSpike(state, dt) {
 // ---- grenades ----
 
 function throwGrenade(state, agent, kind) {
-  if (kind === 'frag' && agent.grenades.frag <= 0) return false;
-  if (kind === 'smoke' && agent.grenades.smoke <= 0) return false;
-  if (kind === 'frag') agent.grenades.frag--;
-  else agent.grenades.smoke--;
+  if (kind === 'blink' && agent.grenades.blink <= 0) return false;
+  if (kind === 'haze' && agent.grenades.haze <= 0) return false;
+  if (kind === 'blink') agent.grenades.blink--;
+  else agent.grenades.haze--;
   const fx = -Math.sin(agent.yaw), fz = -Math.cos(agent.yaw);
   const eyeY = agent.crouched ? 1.12 : 1.62;
   state.frags.push({
     x: agent.x + fx * 0.5, y: agent.y + eyeY, z: agent.z + fz * 0.5,
     vx: fx * 13, vy: 3.2 + Math.sin(agent.pitch) * 8, vz: fz * 13,
-    kind, fuse: 1.5, owner: agent, bounced: false,
+    kind, fuse: kind === 'blink' ? 1.1 : 1.5, owner: agent, bounced: false,
   });
   state.sfx.push('throw');
   return true;
@@ -327,29 +398,30 @@ function updateGrenades(state, dt) {
       g.y = 0.12;
       if (Math.abs(g.vy) > 1.5) { g.vy = -g.vy * 0.35; g.vx *= 0.7; g.vz *= 0.7; g.bounced = true; }
       else { g.vy = 0; g.vx *= 0.85; g.vz *= 0.85; }
-      if (g.kind === 'smoke' && !g.bounced) { /* keep rolling until it stops */ }
     }
     let done = g.fuse <= 0;
-    if (g.kind === 'smoke' && g.bounced && Math.hypot(g.vx, g.vz) < 0.6) done = true;
+    if (g.kind === 'haze' && g.bounced && Math.hypot(g.vx, g.vz) < 0.6) done = true;
     if (!done) continue;
-    if (g.kind === 'frag') {
-      state.explosion = { x: g.x, y: g.y, z: g.z, small: true };
-      state.sfx.push('explosion');
-      const pd = Math.hypot(state.player.x - g.x, state.player.z - g.z);
-      if (pd < 14) state.cameraShake = Math.max(state.cameraShake, 1 - pd / 14);
+    if (g.kind === 'blink') {
+      // Blink flash: buta maks 1,6 dtk bagi yang menghadap ledakan
+      // (berkurang dengan jarak); membelakangi = 0,4 dtk saja.
+      // Butuh garis pandang ke ledakan; tanpa damage.
+      state.sfx.push('flash');
       for (const a of state.agents) {
-        if (!a.alive || a === g.owner) continue;
+        if (!a.alive) continue;
         const d = Math.hypot(a.x - g.x, a.z - g.z);
-        if (d < 6.5) {
-          const dmg = 95 - d * 11;
-          if (applyDamage(state, a, dmg, 'body', g.owner) === 'kill') onKill(state, g.owner, a);
-        }
+        if (d > 13) continue;
+        if (!hasLOS(g.x, g.z, a.x, a.z, 1.4, state.solids)) continue;
+        const toX = (g.x - a.x) / (d || 1), toZ = (g.z - a.z) / (d || 1);
+        const facing = -Math.sin(a.yaw) * toX + -Math.cos(a.yaw) * toZ;
+        const dur = facing > 0 ? 1.6 * (1 - (d / 13) * 0.5) : 0.4;
+        a.blindUntil = Math.max(a.blindUntil, state.time + dur);
       }
     } else {
-      // Smoke: claim the oldest free slot.
+      // Haze smoke: awan radius 5 m, 9 dtk, putus pandangan, tanpa damage.
       let slot = state.smokes.findIndex((s) => !s);
       if (slot === -1) slot = 0;
-      state.smokes[slot] = { x: g.x, y: g.y, z: g.z, life: 14, maxLife: 14 };
+      state.smokes[slot] = { x: g.x, y: g.y, z: g.z, life: 9, maxLife: 9, r: 5 };
       state.sfx.push('smoke');
     }
     state.frags.splice(i, 1);
@@ -365,18 +437,24 @@ function updateGrenades(state, dt) {
 export function endRound(state, winner, reason) {
   if (state.phase !== PHASE.LIVE) return;
   state.score[winner]++;
+  state.roundHistory.push(winner);
+  if (state.roundHistory.length > 13) state.roundHistory.shift();
   state.roundWinner = winner;
   state.roundReason = reason;
   const loser = 1 - winner;
   state.lossStreak[loser] = Math.min(3, state.lossStreak[loser] + 1);
   state.lossStreak[winner] = 0;
-  const winPay = WIN_REWARD;
-  const lossPay = LOSS_REWARD + (state.lossStreak[loser] - 1) * LOSS_STREAK_BONUS;
-  if (winner === TEAM.ATK) state.money += winPay;
-  else state.money += lossPay;
+  // Ekonomi Supra, dibayar ke TIM PEMAIN (bukan selalu penyerang):
+  // menang $2.800 (detonasi $3.200); kalah $1.800 + bonus kalah beruntun
+  // +$400/ronde, total kalah maks $3.000; uang di-cap $10.000.
+  const det = state.spike.state === 'exploded';
+  const winPay = det ? WIN_REWARD_DET : WIN_REWARD;
+  const lossPay = Math.min(LOSS_REWARD_MAX, LOSS_REWARD + (state.lossStreak[loser] - 1) * LOSS_STREAK_BONUS);
+  if (winner === state.player.team) state.money = Math.min(MONEY_CAP, state.money + winPay);
+  else state.money = Math.min(MONEY_CAP, state.money + lossPay);
   const name = winner === TEAM.ATK ? 'TIM PENYERANG MENANG' : 'TIM BERTAHAN MENANG';
   setBanner(state, name, reason, END_TIME);
-  state.sfx.push(winner === TEAM.ATK ? 'roundWin' : 'roundLose');
+  state.sfx.push(winner === state.player.team ? 'roundWin' : 'roundLose');
   state.phase = PHASE.END;
   state.phaseT = END_TIME;
 }
@@ -414,6 +492,7 @@ export function stepSim(state, dt) {
     if (state.phaseT <= 0) {
       state.phase = PHASE.LIVE;
       state.phaseT = ROUND_TIME;
+      state.roundT0 = state.time;
       setBanner(state, 'RONDE DIMULAI', 'Tanam spike atau habisi musuh', 2.5);
       state.sfx.push('roundStart');
     }
@@ -450,11 +529,11 @@ export function stepSim(state, dt) {
     const wantFire = input.fire && (p.weapon.def.auto || !p._prevFire);
     if (wantFire && canFire(p, state.time)) doShoot(state, p);
     p._prevFire = input.fire;
-    // Grenade.
+    // Grenade: Blink dulu, lalu Haze.
     if (input.grenade) {
       input.grenade = false;
-      if (p.grenades.frag > 0) throwGrenade(state, p, 'frag');
-      else if (p.grenades.smoke > 0) throwGrenade(state, p, 'smoke');
+      if (p.grenades.blink > 0) throwGrenade(state, p, 'blink');
+      else if (p.grenades.haze > 0) throwGrenade(state, p, 'haze');
     }
     // Plant: hold E inside a site while carrying.
     const sp = state.spike;
@@ -467,9 +546,17 @@ export function stepSim(state, dt) {
         sp.progress = 0;
       }
     }
+    // Defuse: hold E near a planted spike while defending.
+    if (input.interact && sp.state === 'planted' && p.team === TEAM.DEF) {
+      if (Math.hypot(p.x - sp.x, p.z - sp.z) < 2.4) {
+        sp.state = 'defusing';
+        sp.defuser = p;
+        sp.progress = 0;
+      }
+    }
   }
-  // Spectate: camera follows the player, or the first living ally.
-  state.camAgent = p.alive ? p : (state.agents.find((a) => a.team === TEAM.ATK && a.alive) || p);
+  // Spectate: camera follows the player, or the first living teammate.
+  state.camAgent = p.alive ? p : (state.agents.find((a) => a.team === p.team && a.alive) || p);
   if (!p.alive) { input.lookDX = 0; input.lookDY = 0; }
 
   // --- bots ---
@@ -484,23 +571,26 @@ export function stepSim(state, dt) {
           x1: r.point[0], y1: r.point[1], z1: r.point[2],
         });
         if (r.hit) {
-          const res = applyDamage(state, r.hit, a.weapon.def.damage, r.part, a);
+          const res = applyDamage(state, r.hit, a.weapon.def.damage, r.part, a, r.dist);
           if (res === 'kill') onKill(state, a, r.hit);
         }
       }
       state.sfx.push('shotFar');
       botHeardShot(state, a);
     }
-    // Bot movement from its steering target.
+    // Bot movement from its steering target (penalti kecepatan senjata).
     const wishX = a.brain.tx - a.x, wishZ = a.brain.tz - a.z;
     const wl = Math.hypot(wishX, wishZ);
+    const bSpeed = BOT_SPEED * (a.weapon ? a.weapon.def.speed : 1);
     if (wl > 0.05) {
-      const s = Math.min(BOT_SPEED, wl);
-      integrateAgent(state, a, dt, (wishX / wl) * s, (wishZ / wl) * s, BOT_SPEED);
+      const s = Math.min(bSpeed, wl);
+      integrateAgent(state, a, dt, (wishX / wl) * s, (wishZ / wl) * s, bSpeed);
     } else {
-      integrateAgent(state, a, dt, 0, 0, BOT_SPEED);
+      integrateAgent(state, a, dt, 0, 0, bSpeed);
     }
   }
+  // Dengar langkah: bot menyelidiki suara langkah musuh terdekat.
+  botHeardSteps(state);
 
   updateSpike(state, dt);
   updateGrenades(state, dt);
@@ -518,6 +608,6 @@ export function stepSim(state, dt) {
   }
   if (sp.state === 'planted') {
     const d = state.agents.find((a) => a.isBot && a.alive && a.brain.mode === 'defuse');
-    if (d) sp.state = 'defusing';
+    if (d) { sp.state = 'defusing'; sp.defuser = d; sp.progress = 0; }
   }
 }

@@ -54,7 +54,7 @@ function stageShot(kind) {
     ally(1).x = 3; ally(1).z = 15; ally(1).yaw = 0.3;
     hud.toggleBuy(true);
   } else if (kind === 'fight') {
-    p.weapons[0] = makeWeapon('vulture'); p.weapon = p.weapons[0]; p.slot = 0;
+    p.weapons[0] = makeWeapon('talon'); p.weapon = p.weapons[0]; p.slot = 0;
     p.x = 0; p.z = 10; p.yaw = 0.12; p.pitch = 0;
     enemy(0).x = 2; enemy(0).z = -4; enemy(0).yaw = Math.PI;
     enemy(1).x = -5; enemy(1).z = -1; enemy(1).yaw = Math.PI - 0.4;
@@ -73,14 +73,14 @@ function stageShot(kind) {
     enemy(1).x = 19; enemy(1).z = -14; enemy(1).yaw = Math.PI;
     ally(0).x = 18; ally(0).z = -2; ally(0).yaw = -0.5;
   } else if (kind === 'bomb') {
-    p.weapons[0] = makeWeapon('vulture'); p.weapon = p.weapons[0]; p.slot = 0;
+    p.weapons[0] = makeWeapon('talon'); p.weapon = p.weapons[0]; p.slot = 0;
     p.x = 22; p.z = -7; p.yaw = 0.5; p.pitch = 0.02;
     state.spike.state = 'planting';
     state.spike.site = 'A';
     state.spike.carrier = p;
     state.spike.x = 22; state.spike.z = -7;
     state.spike.progress = 0.6;
-    state.smokes[0] = { x: 20, y: 0, z: -9, life: 10, maxLife: 14 };
+    state.smokes[0] = { x: 20, y: 0, z: -9, life: 7, maxLife: 9, r: 5 };
     enemy(0).x = 26; enemy(0).z = -14; enemy(0).yaw = Math.PI - 0.6;
     enemy(1).x = 18; enemy(1).z = -12; enemy(1).yaw = Math.PI + 0.3;
     ally(0).x = 19; ally(0).z = -3; ally(0).yaw = 0.2;
@@ -108,6 +108,7 @@ document.getElementById('match').addEventListener('mousedown', tryStart);
 
 // ---- main loop ----
 let last = performance.now();
+const bootT = last; // screenshots wait for the GLB models (or 10 s max)
 let acc = 0;
 let frames = 0;
 let frozen = false;
@@ -153,7 +154,10 @@ function frame(now) {
   input.clearEdges();
 
   frames++;
-  if (shot && frames === 3) window.__dustlineReady = true;
+  // In shot mode the screenshot tool waits for this flag: only fire once
+  // the GLB characters are loaded (or 10 s passed, so a failed fetch can
+  // never hang the tool — the box figures stay as the fallback).
+  if (shot && frames >= 3 && (world.modelsReady || now - bootT > 10000)) window.__dustlineReady = true;
 }
 
 window.addEventListener('resize', () => {

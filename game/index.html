@@ -29,6 +29,7 @@
   #hitmarker i:last-child { transform: rotate(-45deg); }
   #hitmarker.kill i { background: #ff4030; }
   #vignette { inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200, 20, 10, 0.55) 100%); opacity: 0; z-index: 4; }
+  #flashbang { inset: 0; background: #fff; opacity: 0; z-index: 5; pointer-events: none; }
   /* top bar */
   #topbar { top: 14px; left: 50%; transform: translateX(-50%); text-align: center; }
   #phase-label { font-size: 11px; letter-spacing: 3px; opacity: 0.8; }
@@ -47,6 +48,7 @@
   /* bottom */
   #health-box { left: 16px; bottom: 16px; width: 240px; }
   #health-bar-wrap { height: 12px; background: rgba(0,0,0,0.55); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  #gear { margin-top: 3px; font-size: 11px; opacity: 0.8; letter-spacing: 0.5px; }
   #health-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #37c978, #7be495); }
   #health-bar.low { background: linear-gradient(90deg, #d43a2a, #ff6a4a); }
   #health-num { font-size: 26px; font-weight: 700; } #armor-num { font-size: 14px; opacity: 0.85; }
@@ -64,21 +66,41 @@
   #progress-bar { height: 100%; width: 0; background: var(--amber); }
   #buy-hint { left: 50%; bottom: 120px; transform: translateX(-50%); font-size: 14px;
     background: var(--panel); border: 1px solid var(--line); padding: 8px 14px; border-radius: 4px; display: none; }
-  /* buy menu */
-  #buy { top: 50%; right: 24px; transform: translateY(-50%); width: 380px; display: none;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; pointer-events: auto; }
+  /* buy menu — grid kartu ala toko referensi: nama + peran di atas,
+     siluet senjata besar di tengah, harga BESAR dengan $, tombol BELI
+     oranye. Palet tetap DUSTLINE (debu/karat/teal, latar gelap). */
+  #buy { left: 50%; top: 50%; transform: translate(-50%, -50%); width: 1060px; max-width: 96vw;
+    display: none; background: #100c09; border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 20px 14px; pointer-events: auto; }
   #buy.open { display: block; }
-  #buy h2 { font-size: 16px; letter-spacing: 2px; color: var(--amber); }
-  #buy-money { font-size: 20px; font-weight: 700; color: var(--amber); margin: 4px 0 10px; }
-  .buy-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: baseline;
-    padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); cursor: pointer; }
-  .buy-row:hover { background: rgba(255, 210, 122, 0.12); }
-  .buy-row.cant { opacity: 0.45; } .buy-row.owned { opacity: 0.55; }
-  .buy-key { font-size: 11px; border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; text-align: center; }
-  .buy-name { font-weight: 600; font-size: 14px; } .buy-desc { grid-column: 2; font-size: 12px; opacity: 0.75; }
-  .buy-price { grid-column: 3; grid-row: 1; color: var(--amber); font-weight: 700; }
+  #buy-head { display: flex; justify-content: space-between; align-items: baseline; }
+  #buy h2 { font-size: 17px; letter-spacing: 2px; color: var(--amber); }
+  #buy-money { font-size: 26px; font-weight: 900; color: var(--amber); font-variant-numeric: tabular-nums; }
+  #buy-money small { font-size: 12px; font-weight: 600; opacity: 0.75; letter-spacing: 1px; }
+  #buy-items { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 12px; }
+  .buy-card { background: rgba(0,0,0,0.35); border: 1px solid var(--line); border-radius: 8px;
+    padding: 11px 12px 10px; text-align: center; position: relative; cursor: pointer; }
+  .buy-card:hover { border-color: var(--amber); }
+  .buy-card.cant { opacity: 0.45; }
+  .buy-card.owned { border-color: var(--teal); }
+  .buy-key { position: absolute; top: 7px; left: 7px; font-size: 11px; border: 1px solid var(--line);
+    border-radius: 3px; padding: 1px 6px; opacity: 0.8; }
+  .buy-badge { position: absolute; top: 7px; right: 7px; font-size: 10px; font-weight: 800; letter-spacing: 1px;
+    color: var(--teal); border: 1px solid var(--teal); border-radius: 3px; padding: 1px 6px; display: none; }
+  .buy-card.owned .buy-badge { display: block; }
+  .buy-name { font-weight: 800; font-size: 15px; }
+  .buy-desc { font-size: 11.5px; opacity: 0.7; margin-top: 1px; min-height: 15px; }
+  .buy-art { height: 62px; display: flex; align-items: center; justify-content: center; color: #e6d9b8; margin: 4px 0 2px; }
+  .buy-art svg { max-width: 100%; max-height: 62px; }
+  .buy-card.cant .buy-art { color: #8a8378; }
+  .buy-price { font-size: 22px; font-weight: 900; color: var(--amber); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .buy-btn { margin-top: 7px; width: 100%; background: #e86a17; color: #fff; font-weight: 800; font-size: 13px;
+    letter-spacing: 1px; border: none; border-radius: 4px; padding: 7px 0; cursor: pointer; pointer-events: none; }
+  .buy-btn:hover { background: #f07d2e; }
+  .buy-card.cant .buy-btn { background: #5a534a; color: #cfc8bc; }
+  .buy-card.owned .buy-btn { background: var(--teal); color: #0c1a16; }
   #buy-msg { margin-top: 10px; font-size: 13px; min-height: 18px; color: var(--amber); }
-  #buy-close { margin-top: 4px; font-size: 12px; opacity: 0.7; }
+  #buy-close { margin-top: 2px; font-size: 12px; opacity: 0.7; }
   /* overlays */
   .overlay { position: fixed; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center;
     flex-direction: column; text-align: center; background: rgba(12, 9, 6, 0.72); }
@@ -88,11 +110,51 @@
   .overlay .keys { margin-top: 18px; font-size: 13px; line-height: 2; opacity: 0.85; }
   .overlay .cta { margin-top: 22px; font-size: 18px; font-weight: 700; color: var(--amber);
     border: 1px solid var(--amber); border-radius: 6px; padding: 10px 22px; }
+  /* scoreboard (Tab) */
   #scoreboard { left: 50%; top: 50%; transform: translate(-50%, -50%); display: none;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px 20px; min-width: 480px; }
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; width: 700px; }
   #scoreboard.show { display: block; }
-  #scoreboard table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  #scoreboard td, #scoreboard th { padding: 5px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  /* Scoreboard header — bahasa visual bar skor referensi: nama tim warna
+     tim + angka skor BESAR tebal di sampingnya, timer di tengah dengan
+     info ronde/OT di bawahnya. Hierarki: skor paling besar, nama tim
+     kedua, timer di tengah. Palet DUSTLINE: teal vs oranye karat. */
+  #sb-head { display: flex; align-items: center; gap: 12px;
+    background: rgba(0,0,0,0.28); margin: -16px -18px 0; padding: 12px 18px 10px;
+    border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+  .sb-side { flex: 1; display: flex; align-items: baseline; gap: 10px; }
+  .sb-side.atk { justify-content: flex-start; }
+  .sb-side.def { justify-content: flex-end; }
+  .sb-team-name { font-size: 19px; font-weight: 800; letter-spacing: 1px; white-space: nowrap; }
+  .sb-side.atk .sb-team-name { color: var(--teal); }
+  .sb-side.def .sb-team-name { color: #ff9a5a; }
+  .sb-score { font-size: 56px; font-weight: 900; line-height: 0.9; font-variant-numeric: tabular-nums;
+    text-shadow: 0 2px 0 rgba(0,0,0,0.5); }
+  .sb-side.atk .sb-score { color: var(--teal); }
+  .sb-side.def .sb-score { color: #ff9a5a; }
+  .sb-mid { text-align: center; }
+  #sb-timer { font-size: 30px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  #sb-round { font-size: 12px; letter-spacing: 1px; opacity: 0.85; margin-top: 3px; white-space: nowrap; }
+  #sb-bomb { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--amber); }
+  #sb-bomb.danger { color: #ff5040; }
+  #sb-pips { margin: 8px 0 2px; font-size: 15px; letter-spacing: 3px; }
+  #sb-pips .pip-atk { color: var(--teal); } #sb-pips .pip-def { color: #ff8a5a; } #sb-pips .pip-todo { color: rgba(255,255,255,0.25); }
+  #sb-teams { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
+  .sb-team h3 { font-size: 13px; letter-spacing: 2px; padding-bottom: 5px; border-bottom: 2px solid; display: flex; justify-content: space-between; }
+  .sb-team.atk h3 { color: var(--teal); border-color: var(--teal); }
+  .sb-team.def h3 { color: #ff8a5a; border-color: #c25a2e; }
+  .sb-team table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  .sb-team td:nth-child(5) { white-space: nowrap; }
+  .sb-team td, .sb-team th { padding: 5px 6px; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.07); }
+  .sb-team td:first-child, .sb-team th:first-child { text-align: left; }
+  .sb-team th { font-size: 11px; opacity: 0.6; letter-spacing: 1px; }
+  .sb-team tr.mvp td:first-child { color: var(--amber); font-weight: 700; }
+  .sb-team tr.dead td { opacity: 0.45; }
+  .sb-team tr.me td:first-child { text-decoration: underline; }
+  .sb-hp { display: inline-block; width: 44px; height: 6px; background: rgba(0,0,0,0.6); border-radius: 2px; overflow: hidden; vertical-align: middle; }
+  .sb-hp i { display: block; height: 100%; background: #37c978; }
+  .sb-hp.low i { background: #ff5040; }
+  #sb-foot { margin-top: 10px; font-size: 12px; opacity: 0.8; display: flex; justify-content: space-between; }
+  #sb-mvp { color: var(--amber); font-weight: 700; }
   #err { position: fixed; left: 8px; bottom: 8px; z-index: 50; display: none; max-width: 90%;
     background: #7a1008; color: #fff; font: 12px monospace; padding: 8px 10px; border-radius: 4px; }
   #hint { left: 50%; bottom: 8px; transform: translateX(-50%); font-size: 11px; opacity: 0.55; }
@@ -101,6 +163,7 @@
 <body>
 <canvas id="game"></canvas>
 <div id="vignette" class="hud"></div>
+<div id="flashbang" class="hud"></div>
 <div id="crosshair" class="hud"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i></div>
 <div id="hitmarker" class="hud"><i></i><i></i></div>
 <div id="topbar" class="hud">
@@ -110,33 +173,33 @@
   <div><span id="alive-atk">●●●</span> &nbsp; <span id="alive-def">●●●</span></div>
 </div>
 <div id="bomb-status" class="hud">Spike: dibawa</div>
-<div id="money" class="hud">$800</div>
+<div id="money" class="hud">$1.000</div>
 <div id="feed" class="hud"></div>
 <div id="health-box" class="hud">
   <div><span id="health-num">100</span> HP &nbsp; <span id="armor-num">0</span> Armor</div>
   <div id="health-bar-wrap"><div id="health-bar"></div></div>
+  <div id="gear"></div>
 </div>
 <div id="weapon-box" class="hud">
-  <div id="weapon-name">Mule .45</div>
+  <div id="weapon-name">P9 Sidearm</div>
   <div id="ammo">12 / 48</div>
-  <div id="grenades">Frag 0 · Smoke 0</div>
+  <div id="grenades">Blink 0 · Haze 0</div>
 </div>
 <div id="banner" class="hud"><div id="banner-title"></div><div id="banner-sub"></div></div>
 <div id="progress" class="hud"><div id="progress-label"></div><div id="progress-wrap"><div id="progress-bar"></div></div></div>
 <div id="buy-hint" class="hud">Tekan <b>B</b> untuk belanja — senjata, vest, granat</div>
 <div id="buy" class="hud">
-  <h2>TOKO — FASE BELI</h2>
-  <div id="buy-money">$800</div>
+  <div id="buy-head"><h2>TOKO — FASE BELI</h2><div id="buy-money"><small>UANG</small> $1.000</div></div>
   <div id="buy-items"></div>
   <div id="buy-msg"></div>
-  <div id="buy-close">Klik item atau tekan 1–7 · B / Esc untuk tutup</div>
+  <div id="buy-close">Klik kartu atau tekan angka · B / Esc untuk tutup</div>
 </div>
 <div id="menu" class="overlay show">
   <h1>DUSTLINE</h1>
   <p>Pembangkit surya terbengkalai di cekungan berdebu. 3 lawan 3, bomb-defusal:
-  tanam spike di Site A atau B, atau habisi semua musuh. Pertama sampai 5 ronde menang.</p>
+  tanam spike di Site A atau B, atau habisi semua musuh. Pertama sampai 7 ronde menang; bila 6-6, ronde ke-13 jadi penentu.</p>
   <div class="keys">WASD gerak · Mouse membidik · Klik tembak · R isi ulang · B belanja<br>
-  E tanam/jinakkan · G granat · 1/2 ganti senjata · Ctrl jongkok · Shift jalan pelan · Tab skor</div>
+  E tanam/jinakkan · G granat · 1/2 ganti senjata · Ctrl jongkok · Shift lari cepat · Tab skor</div>
   <div class="cta">KLIK UNTUK BERMAIN</div>
 </div>
 <div id="match" class="overlay">
@@ -145,8 +208,22 @@
   <div class="cta">KLIK UNTUK MAIN LAGI</div>
 </div>
 <div id="scoreboard" class="hud">
-  <table><thead><tr><th>Pemain</th><th>Tim</th><th>Senjata</th><th>Status</th></tr></thead>
-  <tbody id="score-rows"></tbody></table>
+  <div id="sb-head">
+    <div class="sb-side atk"><span class="sb-team-name">PENYERANG</span><span class="sb-score" id="sb-atk-score">0</span></div>
+    <div class="sb-mid"><div id="sb-timer">1:40</div><div id="sb-round">RONDE 1 · pertama ke 5</div></div>
+    <div class="sb-side def"><span class="sb-score" id="sb-def-score">0</span><span class="sb-team-name">BERTAHAN</span></div>
+  </div>
+  <div id="sb-bomb">Spike: dibawa</div>
+  <div id="sb-pips"></div>
+  <div id="sb-teams">
+    <div class="sb-team atk"><h3><span>PENYERANG</span></h3>
+      <table><thead><tr><th>Pemain</th><th>K</th><th>D</th><th>DMG</th><th>Senjata</th><th>HP</th></tr></thead>
+      <tbody id="sb-atk-rows"></tbody></table></div>
+    <div class="sb-team def"><h3><span>BERTAHAN</span></h3>
+      <table><thead><tr><th>Pemain</th><th>K</th><th>D</th><th>DMG</th><th>Senjata</th><th>HP</th></tr></thead>
+      <tbody id="sb-def-rows"></tbody></table></div>
+  </div>
+  <div id="sb-foot"><span id="sb-mvp"></span><span id="sb-money"></span></div>
 </div>
 <div id="hint" class="hud">DUSTLINE · 3v3 bomb-defusal · tiga.js</div>
 <div id="err"></div>

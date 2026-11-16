@@ -75,6 +75,7 @@ export function createAudio() {
     step: () => noise(0.05, 420, 0.07),
     throw: () => noise(0.12, 1200, 0.12, 'bandpass'),
     smoke: () => noise(0.8, 700, 0.1),
+    flash: () => { blip(2200, 0.35, 'sine', 0.3, 400); noise(0.2, 4000, 0.15, 'highpass'); },
     beep: () => blip(880, 0.09, 'sine', 0.2),
     planted: () => { blip(660, 0.1, 'sine', 0.2); setTimeout(() => blip(660, 0.1, 'sine', 0.2), 140); setTimeout(() => blip(990, 0.16, 'sine', 0.22), 300); },
     explosion: () => { noise(0.8, 2600, 0.6); blip(60, 0.7, 'sine', 0.5, 28); },

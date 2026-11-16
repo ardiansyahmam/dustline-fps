@@ -1,17 +1,36 @@
 // DUSTLINE — bots: waypoint navigation, sight/hearing perception, hold and
 // push tactics, plant/defuse behaviour. One brain per bot, no allocation
 // in the per-frame path (paths are small reused arrays).
+// Desain Supra: 5 role per ronde (entry/support/mid-control/anchor/
+// lurker); cone penglihatan 105° sampai 26 m; dengar langkah 17 m
+// (35 m di atas grate Pump Duct), tembakan 35 m; reaksi 0,25-0,55 dtk;
+// aim settle 0,35-0,8 dtk; TIDAK PERNAH menembak menembus dinding
+// (hasLOS + traceShot sudah menegakkannya).
 
 import { angleDiff, angleLerp, clamp, hasLOS } from './utils.js';
 import { fireWeapon, canFire } from './weapons.js';
+import { TEAM } from './state.js';
 
-const VISION_RANGE = 30;
-const VISION_HALF = 1.0;      // ~115 deg cone
-const HEAR_RANGE = 26;
+const VISION_RANGE = 26;
+const VISION_HALF = 0.916;    // 105 deg cone / 2
+const HEAR_RANGE = 35;         // tembakan
+const FOOTSTEP_RANGE = 17;     // langkah
+const DUCT_HEAR_RANGE = 35;    // langkah di atas grate Pump Duct
 
-export function createBrain(role, holdNode) {
+// Tingkat kesulitan per ronde (celah desain, nilai isi sendiri):
+// reaksi + konsistensi aim + koordinasi naik tiap tier — BUKAN
+// wallhack atau damage lebih besar.
+function diffFor(round) {
+  if (round <= 2) return { react: 0.55, aim: 0.038, callout: false };
+  if (round <= 4) return { react: 0.45, aim: 0.032, callout: true };
+  if (round <= 6) return { react: 0.38, aim: 0.027, callout: true };
+  return { react: 0.30, aim: 0.022, callout: true };
+}
+
+export function createBrain(side, holdNode) {
   return {
-    role,                       // 'atk' | 'def'
+    side,                       // 'atk' | 'def' (sisi tim)
+    role: 'anchor',             // entry | support | mid | anchor | lurker (per ronde)
     mode: 'hold',               // hold | push | investigate | plant | defuse
     wp: holdNode,               // current waypoint index
     path: [], pathI: 0,         // BFS path (indices)
@@ -20,10 +39,11 @@ export function createBrain(role, holdNode) {
     site: null,                 // assigned site 'A' | 'B'
     seen: null,                 // currently visible enemy agent
     lastSeenX: 0, lastSeenZ: 0, lastSeenT: -99,
-    reactAt: 0, aimErr: 0,
+    reactAt: 0, aimErr: 0, settleUntil: 0,
     burstLeft: 0, burstAt: 0, pauseUntil: 0,
     perceiveAt: 0,              // staggered perception timer
     plantT: 0, defuseT: 0,
+    relocate: false,            // anchor: pindah sudut setelah burst
   };
 }
 
@@ -50,6 +70,19 @@ export function findPath(waypoints, from, to, out) {
   return out;
 }
 
+// Path via an intermediate waypoint (rotasi lewat jalur tertentu:
+// Solar Spine = waypoint 17, Pump Duct = waypoint 14).
+export function pathVia(waypoints, from, via, to, out) {
+  const first = [];
+  findPath(waypoints, from, via, first);
+  const second = [];
+  findPath(waypoints, via, to, second);
+  out.length = 0;
+  for (const n of first) out.push(n);
+  for (let i = 1; i < second.length; i++) out.push(second[i]);
+  return out;
+}
+
 function nearestWaypoint(waypoints, x, z) {
   let best = 0, bd = Infinity;
   for (let i = 0; i < waypoints.length; i++) {
@@ -64,20 +97,34 @@ function nearestWaypoint(waypoints, x, z) {
 function smokeBlocks(x0, z0, x1, z1, smokes) {
   for (const s of smokes) {
     if (!s) continue;
+    const R = s.r || 3.4;
     const dx = x1 - x0, dz = z1 - z0;
     const len2 = dx * dx + dz * dz;
     let t = len2 > 0 ? ((s.x - x0) * dx + (s.z - z0) * dz) / len2 : 0;
     t = clamp(t, 0, 1);
     const px = x0 + dx * t - s.x, pz = z0 + dz * t - s.z;
-    if (px * px + pz * pz < 3.4 * 3.4) return true;
+    if (px * px + pz * pz < R * R) return true;
   }
   return false;
 }
 
+// Catat intel: defender terlihat/terdengar di dekat sebuah site.
+function noteIntel(state, x, z) {
+  const sites = state.mapData.sites;
+  for (const key of ['A', 'B']) {
+    const s = sites[key];
+    if (Math.hypot(s.x - x, s.z - z) < 12) state.intel[key] = state.time;
+  }
+}
+
 function perceive(state, bot, now) {
   const b = bot.brain;
+  const prevSeen = b.seen;
   b.seen = null;
+  // Buta oleh Blink flash: tidak bisa melihat sama sekali.
+  if (bot.blindUntil > now) return;
   const eyeY = 1.5;
+  const diff = diffFor(state.round);
   for (const e of state.agents) {
     if (e.team === bot.team || !e.alive) continue;
     const dx = e.x - bot.x, dz = e.z - bot.z;
@@ -90,15 +137,33 @@ function perceive(state, bot, now) {
     if (smokeBlocks(bot.x, bot.z, e.x, e.z, state.smokes)) continue;
     b.seen = e;
     b.lastSeenX = e.x; b.lastSeenZ = e.z; b.lastSeenT = now;
-    const diff = Math.max(0.3, 0.68 - state.round * 0.045);
-    if (b.reactAt < now) b.reactAt = now + diff * (0.7 + state.rng() * 0.6);
-    b.aimErr = Math.max(0.016, 0.038 - state.round * 0.0025) + dist * 0.0011;
+    // Intel: defender yang terlihat dicatat per site (penyerang memilih
+    // site dari intel ini).
+    if (e.team === TEAM.DEF) noteIntel(state, e.x, e.z);
+    // Reaksi 0,25-0,55 dtk (tier makin cepat), lalu aim settle
+    // 0,35-0,8 dtk: bidikan mulai goyang 2x lalu mengunci.
+    if (b.reactAt < now) {
+      const base = diff.react * (0.7 + state.rng() * 0.6);
+      b.reactAt = now + clamp(base, 0.25, 0.55);
+    }
+    if (prevSeen !== e) b.settleUntil = now + 0.35 + state.rng() * 0.45;
+    b.aimErr = Math.max(0.016, diff.aim) + dist * 0.0011;
+    // Callout (tier 2+): rekan mendapat posisi musuh yang sama.
+    if (diff.callout) {
+      for (const t of state.agents) {
+        if (!t.isBot || t === bot || t.team !== bot.team || !t.alive) continue;
+        if (t.brain.lastSeenT < now) {
+          t.brain.lastSeenX = e.x; t.brain.lastSeenZ = e.z; t.brain.lastSeenT = now;
+        }
+      }
+    }
     return;
   }
 }
 
-// A gunshot was fired: nearby enemies investigate the sound.
+// A gunshot was fired: nearby enemies investigate the sound (35 m).
 export function botHeardShot(state, shooter) {
+  if (shooter.team === TEAM.DEF) noteIntel(state, shooter.x, shooter.z);
   for (const a of state.agents) {
     if (!a.isBot || !a.alive || a.team === shooter.team) continue;
     const d = Math.hypot(a.x - shooter.x, a.z - shooter.z);
@@ -109,6 +174,31 @@ export function botHeardShot(state, shooter) {
     b.lastSeenZ = shooter.z + (state.rng() - 0.5) * 6;
     b.lastSeenT = state.time;
     if (b.mode !== 'investigate') { b.mode = 'investigate'; b.holdT = 0; }
+  }
+}
+
+// Footsteps: a bot investigates the nearest enemy mover it can hear.
+// Langkah terdengar 17 m; di atas grate Pump Duct 35 m (lebih berisik).
+export function botHeardSteps(state) {
+  const duct = state.mapData.zones ? state.mapData.zones.duct : null;
+  for (const a of state.agents) {
+    if (!a.isBot || !a.alive) continue;
+    const b = a.brain;
+    if (b.mode === 'plant' || b.mode === 'defuse' || b.seen) continue;
+    let best = null, bestD = Infinity;
+    for (const e of state.agents) {
+      if (e.team === a.team || !e.alive) continue;
+      const spd = Math.hypot(e.vx, e.vz);
+      if (spd < 2.5) continue;
+      const d = Math.hypot(e.x - a.x, e.z - a.z);
+      const inDuct = duct && e.x >= duct.x0 && e.x <= duct.x1 && e.z >= duct.z0 && e.z <= duct.z1;
+      const range = inDuct ? DUCT_HEAR_RANGE : FOOTSTEP_RANGE;
+      if (d < range && d < bestD) { best = e; bestD = d; }
+    }
+    if (best && state.time - b.lastSeenT > 1.5) {
+      b.lastSeenX = best.x; b.lastSeenZ = best.z; b.lastSeenT = state.time;
+      if (b.mode !== 'investigate') { b.mode = 'investigate'; b.holdT = 0; }
+    }
   }
 }
 
@@ -123,12 +213,12 @@ function steerTo(bot, x, z, speed) {
   return d;
 }
 
-function followPath(state, bot, dt) {
+function followPath(state, bot, dt, speed = 3.6) {
   const b = bot.brain;
   const wps = state.mapData.waypoints;
   if (b.pathI >= b.path.length) return true; // arrived
   const node = wps[b.path[b.pathI]];
-  const d = steerTo(bot, node[0], node[1], 3.6);
+  const d = steerTo(bot, node[0], node[1], speed);
   if (d < 1.3) b.pathI++;
   return b.pathI >= b.path.length;
 }
@@ -155,17 +245,23 @@ export function updateBot(state, bot, dt, rng, shotOut) {
     const eyeY = bot.crouched ? 1.12 : 1.62;
     const wantPitch = Math.atan2((e.y + 1.3) - (bot.y + eyeY), dist);
     bot.pitch = angleLerp(bot.pitch, wantPitch, Math.min(1, dt * 9));
+    // Aim settle: bidikan masih goyang 2x selama 0,35-0,8 dtk pertama.
+    const settle = now < b.settleUntil ? 2 : 1;
     // Burst fire with pauses.
     if (now >= b.pauseUntil) {
       if (b.burstLeft <= 0) b.burstLeft = 3 + ((rng() * 3) | 0);
       if (canFire(bot, now)) {
         const saveYaw = bot.yaw, savePitch = bot.pitch;
-        bot.yaw += (rng() - 0.5) * 2 * b.aimErr;
-        bot.pitch += (rng() - 0.5) * 2 * b.aimErr;
+        bot.yaw += (rng() - 0.5) * 2 * b.aimErr * settle;
+        bot.pitch += (rng() - 0.5) * 2 * b.aimErr * settle;
         fireWeapon(state, bot, rng, shotOut);
         bot.yaw = saveYaw; bot.pitch = savePitch;
         b.burstLeft--;
-        if (b.burstLeft <= 0) b.pauseUntil = now + 0.5 + rng() * 0.7;
+        if (b.burstLeft <= 0) {
+          b.pauseUntil = now + 0.5 + rng() * 0.7;
+          // Anchor: peek singkat lalu PINDAH sudut setelah 1-2 burst.
+          if (b.role === 'anchor') b.holdT = 0;
+        }
         return shotOut; // sim draws tracers + sound from this
       }
     }
@@ -176,7 +272,8 @@ export function updateBot(state, bot, dt, rng, shotOut) {
 
   // --- objective behaviour ---
   const sp = state.spike;
-  if (b.role === 'atk') {
+  const elapsed = now - (state.roundT0 || 0); // seconds into the round
+  if (b.side === 'atk') {
     // Carrier plants when it reaches its site with no enemy in sight.
     if (sp.carrier === bot && sp.state === 'carried') {
       const site = sites[b.site];
@@ -187,19 +284,48 @@ export function updateBot(state, bot, dt, rng, shotOut) {
       }
     }
     if (b.mode === 'plant') return null; // sim advances the channel
-    // Push toward the assigned site.
-    if (b.mode !== 'push' || b.pathI >= b.path.length) {
-      const siteNode = b.site === 'A' ? 16 : 15;
+    // Push toward the assigned site, per role.
+    const siteNode = b.site === 'A' ? 16 : 15;
+    const approachNode = b.site === 'A' ? 12 : 10;
+    const entryBot = state.agents.find((a) => a.isBot && a.team === bot.team && a.brain.role === 'entry' && a !== bot);
+    let target = siteNode, speed = 3.6, via = -1;
+    if (b.role === 'lurker') {
+      // Rute panjang lewat Solar Spine (waypoint 17), lebih lambat.
+      target = siteNode; speed = 3.0; via = 17;
+    } else if (b.role === 'support') {
+      // Ikuti entry: tahan di akses site sampai entry dekat site.
+      const site = sites[b.site];
+      const entryNear = entryBot && Math.hypot(entryBot.x - site.x, entryBot.z - site.z) < 6;
+      target = entryNear || elapsed > 20 ? siteNode : approachNode;
+      speed = 3.4;
+    } else if (b.role === 'mid') {
+      // Mid-control: kuasai mid dulu 15 dtk, lalu dorong ke site.
+      const intelFresh = state.agents.some((a) => a.team === bot.team && a.isBot && now - a.brain.lastSeenT < 3);
+      if (elapsed < 15 && !intelFresh && sp.state !== 'planted') {
+        steerTo(bot, wps[9][0], wps[9][1], 3.6);
+        bot.yaw += Math.sin(now * 0.5 + bot.id * 2) * dt * 0.5;
+        return null;
+      }
+      target = siteNode; speed = 3.6;
+    } else {
+      // Entry: paling dulu ke site.
+      target = siteNode; speed = 4.0;
+    }
+    if (b.mode !== 'push' || b.pathI >= b.path.length || b._target !== target) {
       const from = nearestWaypoint(wps, bot.x, bot.z);
-      findPath(wps, from, siteNode, b.path);
+      if (via >= 0) pathVia(wps, from, via, target, b.path);
+      else findPath(wps, from, target, b.path);
       b.pathI = 0;
       b.mode = 'push';
+      b._target = target;
     }
-    followPath(state, bot, dt);
+    followPath(state, bot, dt, speed);
   } else {
     // Defenders.
     if (sp.state === 'planted') {
-      // Converge on the planted spike; nearest one defuses.
+      // Retake: konvergen ke spike yang ditanam; yang terdekat defuse.
+      // Dua sudut, bukan berlari satu-satu: rotator kedua lewat Pump
+      // Duct (waypoint 14), yang pertama langsung.
       const dSpike = Math.hypot(sp.x - bot.x, sp.z - bot.z);
       if (dSpike < 2.2) {
         b.mode = 'defuse';
@@ -208,23 +334,35 @@ export function updateBot(state, bot, dt, rng, shotOut) {
       if (b.mode !== 'push' || b.pathI >= b.path.length) {
         const from = nearestWaypoint(wps, bot.x, bot.z);
         const target = sp.site === 'A' ? 16 : 15;
-        findPath(wps, from, target, b.path);
+        const alreadyPushing = state.agents.filter((a) => a.isBot && a.team === bot.team
+          && a !== bot && a.brain.mode === 'push').length;
+        if (alreadyPushing >= 1) pathVia(wps, from, 14, target, b.path);
+        else findPath(wps, from, target, b.path);
         b.pathI = 0;
         b.mode = 'push';
       }
-      followPath(state, bot, dt);
+      followPath(state, bot, dt, 3.8);
     } else if (b.mode === 'investigate') {
       const d = steerTo(bot, b.lastSeenX, b.lastSeenZ, 3.8);
       if (d < 1.5) { b.mode = 'hold'; b.holdT = 2 + rng() * 3; }
     } else {
-      // Hold a site angle, shift spots now and then.
+      // Hold, per role: anchor di sudut site (pindah setelah burst —
+      // holdT direset di blok combat), mid di Inverter Court (wp 9),
+      // lurker di Solar Spine (wp 17), support di akses site.
       b.holdT -= dt;
       if (b.holdT <= 0) {
-        const site = sites[b.site];
-        const a = rng() * Math.PI * 2;
-        const r = 2 + rng() * 4;
-        b.tx = site.x + Math.cos(a) * r;
-        b.tz = site.z + Math.sin(a) * r;
+        if (b.role === 'mid') { b.tx = wps[9][0]; b.tz = wps[9][1]; }
+        else if (b.role === 'lurker') { b.tx = wps[17][0]; b.tz = wps[17][1]; }
+        else if (b.role === 'support') {
+          const node = b.site === 'A' ? 12 : 10;
+          b.tx = wps[node][0]; b.tz = wps[node][1];
+        } else {
+          const site = sites[b.site];
+          const a = rng() * Math.PI * 2;
+          const r = 2 + rng() * 4;
+          b.tx = site.x + Math.cos(a) * r;
+          b.tz = site.z + Math.sin(a) * r;
+        }
         b.holdT = 4 + rng() * 5;
       }
       steerTo(bot, b.tx, b.tz, 2.2);
