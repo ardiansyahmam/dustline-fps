@@ -48,17 +48,19 @@ export function createInput(canvas, state) {
   function mouseDown(e) {
     anyClick = true;
     if (e.button === 0) input.fire = true;
+    if (e.button === 2) input.aim = true;
     if (!locked && state.phase !== 'menu') canvas.requestPointerLock();
   }
   function mouseUp(e) {
     if (e.button === 0) input.fire = false;
+    if (e.button === 2) input.aim = false;
   }
   function lockChange() {
     locked = document.pointerLockElement === canvas;
     if (!locked) input.fire = false;
   }
   function blur() {
-    input.fwd = 0; input.strafe = 0; input.fire = false; input.jump = false;
+    input.fwd = 0; input.strafe = 0; input.fire = false; input.aim = false; input.jump = false;
     input.sprint = false; input.crouch = false; input.interact = false;
   }
 

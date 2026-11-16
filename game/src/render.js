@@ -1,7 +1,6 @@
 // DUSTLINE — render: three.js scene, lighting, bot figures, viewmodel,
-// tracers, smoke, spike and explosion. The sim owns all gameplay state;
-// this module only mirrors it into the scene. Preallocated everything:
-// no `new` in the per-frame path except pooled tracer updates.
+// tracers, smoke, spike and explosion. Mirrors sim state into the scene;
+// preallocated (no `new` in the per-frame path).
 
 import * as THREE from 'three';
 import { buildMap, makeTextures } from './map.js';
@@ -26,7 +25,7 @@ export function createRenderer(canvas) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.06;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -346,10 +345,15 @@ export function syncWorld(world, THREE, state, dt) {
   world.camera.position.set(p.x + bobX, p.y + eyeH + bobY + shY, p.z);
   world.camera.rotation.order = 'YXZ';
   world.camera.rotation.set(p.pitch + p.recoil * 0.35 + shX, p.yaw, p.strafe * 0.012);
+  // Scope: FOV 75/zoom while aiming (37.5 at 2x, 25 at 3x).
+  const pl = state.player;
+  const z = state.phase === 'live' && pl.alive && pl.aiming && pl.weapon ? pl.weapon.def.zoom : 1;
+  const fov = 75 / z;
+  if (world.camera.fov !== fov) { world.camera.fov = fov; world.camera.updateProjectionMatrix(); }
 
   // --- viewmodel sway / kick / flash (hidden while spectating) ---
   const vm = world.viewmodel;
-  vm.group.visible = !isSpectating;
+  vm.group.visible = !isSpectating && !(pl.aiming && z > 1);
   // Recolor the viewmodel to the player's current weapon.
   if (state.player.weapon) setViewmodelWeapon(vm, state.player.weapon.def);
   const yawVel = (p.yaw - world.prevYaw) / Math.max(dt, 1e-4);
@@ -455,7 +459,8 @@ export function syncWorld(world, THREE, state, dt) {
   for (let i = 0; i < 6; i++) {
     const s = state.smokes[i];
     if (s) {
-      const grow = 1 + (1 - s.life / s.maxLife) * 2.4;
+      // Visual radius matches the logic radius (B15): ~5 m, barely grows.
+      const grow = 1 + (1 - s.life / s.maxLife) * 0.1;
       const R = (s.r || 3.4) * 0.94;
       dummy.position.set(s.x, s.y + 0.8, s.z);
       dummy.scale.set(R * grow, R * 0.68 * grow, R * grow);

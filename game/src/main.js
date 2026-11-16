@@ -55,7 +55,7 @@ function stageShot(kind) {
     hud.toggleBuy(true);
   } else if (kind === 'fight') {
     p.weapons[0] = makeWeapon('talon'); p.weapon = p.weapons[0]; p.slot = 0;
-    p.x = 0; p.z = 10; p.yaw = 0.12; p.pitch = 0;
+    p.x = 0; p.z = 10; p.yaw = -0.14; p.pitch = 0; // aim at Dune (2,-4) so the scoped cover centers an enemy
     enemy(0).x = 2; enemy(0).z = -4; enemy(0).yaw = Math.PI;
     enemy(1).x = -5; enemy(1).z = -1; enemy(1).yaw = Math.PI - 0.4;
     enemy(2).x = 6; enemy(2).z = -7; enemy(2).yaw = Math.PI + 0.3;
@@ -63,6 +63,7 @@ function stageShot(kind) {
     ally(1).x = 3; ally(1).z = 13; ally(1).yaw = -0.2;
     state.tracerQueue.push({ x0: 0, y0: 1.5, z0: 10, x1: 2, y1: 1.3, z1: -4 });
     state.hitmark = 0.2;
+    state.input.aim = true; // cover shot: Talon 2x scope active
   } else if (kind === 'site') {
     p.x = 14; p.z = -5; p.yaw = -1.14; p.pitch = 0.01;
     state.spike.state = 'planted';

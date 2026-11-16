@@ -1,7 +1,6 @@
 // DUSTLINE — sim: fixed-step (60 Hz) gameplay. Movement, shooting,
 // grenades, spike plant/defuse, rounds and economy. Render and HUD only
 // read the state; this module is the only writer of gameplay state.
-
 import { PHASE, TEAM, ROUND_TIME, BUY_TIME, END_TIME, WIN_ROUNDS, PLANT_TIME, DEFUSE_TIME, DEFUSE_TIME_KIT, SPIKE_TIME, START_MONEY, MONEY_CAP, KILL_REWARD, WIN_REWARD, WIN_REWARD_DET, LOSS_REWARD, LOSS_STREAK_BONUS, LOSS_REWARD_MAX, PLANT_REWARD, DEFUSE_REWARD, createState, createAgent, addFeed, setBanner } from './state.js';
 import { circleVsAABB, clamp, hasLOS } from './utils.js';
 import { WEAPONS, makeWeapon, canFire, fireWeapon, applyDamage, startReload, finishReload } from './weapons.js';
@@ -9,8 +8,12 @@ import { createBrain, updateBot, botHeardShot, botHeardSteps } from './bots.js';
 
 export const STEP = 1 / 60;
 
-// Game-feel (desain Supra, kiblat Point Blank): jalan 4,2 m/s,
-// sprint 6 m/s (Shift), jongkok 2,1 m/s; akselerasi WASD; collision kapsul.
+// Roster identity is fixed by membership, not by side: roster 0 is the
+// player's squad (You/Rook/Sable), roster 1 the enemy squad. Sides swap
+// after round 6, so every score/streak lookup goes through this.
+const rosterOf = (s, t) => (t === s.player.team ? 0 : 1);
+
+// Game-feel (Supra, Point Blank): walk 4.2, sprint 6, crouch 2.1 m/s.
 const PLAYER_SPEED = 4.2;
 const PLAYER_SPRINT = 6;
 const PLAYER_CROUCH = 2.1;
@@ -67,6 +70,10 @@ export function startMatch(state) {
     a.armor = 0; a.helmet = false; a.kit = false;
   }
   for (const a of state.agents) { a.kills = 0; a.deaths = 0; a.dmg = 0; a.hs = 0; }
+  // Fresh loadout: pistol only, no grenades (B13 — no inherited primary).
+  const p = state.player;
+  p.weapons[0] = null; p.weapon = p.weapons[1]; p.slot = 1;
+  p.grenades.blink = 0; p.grenades.haze = 0;
   startRound(state);
 }
 
@@ -89,16 +96,14 @@ function placeAgents(state) {
     a.pitch = 0; a.hp = 100; a.alive = true;
     a.reloading = false; a.spread = 0; a.recoil = 0; a.blindUntil = 0;
   });
-  // Role taktis: 5 role berbeda per ronde, digilir (entry/support/
-  // mid-control/anchor/lurker). Bot id 1-5 + ronde = permutasi.
+  // 5 roles per round, rotated (entry/support/mid/anchor/lurker).
   const ROLES = ['entry', 'support', 'mid', 'anchor', 'lurker'];
   for (const b of state.agents) {
     if (!b.isBot) continue;
     b.brain.role = ROLES[(b.id + state.round) % 5];
   }
-  // Penyerang pilih site dari intel: site yang PALING LAMA tidak
-  // terlihat/terdengar defender-nya (paling sepi = paling lemah).
-  // Lurker pergi ke site satunya lewat rute panjang (Solar Spine).
+  // Attackers pick the quietest site from intel; lurker takes the other
+  // site via the long Solar Spine route.
   const chosen = state.intel.A <= state.intel.B ? 'A' : 'B';
   const other = chosen === 'A' ? 'B' : 'A';
   for (const b of atk) {
@@ -106,8 +111,7 @@ function placeAgents(state) {
     b.brain.site = b.brain.role === 'lurker' ? other : chosen;
     b.brain.mode = 'hold'; b.brain.pathI = 99; b.brain.holdT = 0; b.brain.relocate = false;
   }
-  // Bertahan: 1 anchor per site + rotator. (Anchor jaga site yang
-  // ditugaskan; rotator menunggu di mid/jalur lalu merespons suara.)
+  // Defenders: 1 anchor per site + rotator.
   def.forEach((b, i) => {
     if (!b.isBot) return;
     b.brain.site = i === 0 ? 'A' : i === 1 ? 'B' : (state.round % 2 === 1 ? 'A' : 'B');
@@ -115,15 +119,14 @@ function placeAgents(state) {
   });
 }
 
-// Perilaku beli bot (celah desain, nilai isi sendiri): ronde 1 semua
-// pistol; ronde 2+ tim yang menang ronde lalu beli rifle sesuai role,
-// yang kalah beli SMG; ronde 3+ tim menang pakai vest; defender punya
-// peluang 30% membawa defuse kit sejak ronde 3 (defuse 4 dtk).
+// Bot buys: round 1 pistols; later the winning team buys rifles by
+// role, losers SMG; winners get a vest from round 3; defenders may
+// carry a defuse kit (30%) from round 3.
 function botBuy(state, bot) {
   const r = state.round;
   if (r === 1) { bot.weapon = makeWeapon('p9'); return; }
   const won = state.roundHistory.length > 0
-    && state.roundHistory[state.roundHistory.length - 1] === bot.team;
+    && state.roundHistory[state.roundHistory.length - 1] === rosterOf(state, bot.team);
   const byRole = { entry: 'rift', support: 'talon', mid: 'vesper', anchor: 'brine', lurker: 'talon' };
   bot.weapon = makeWeapon(won ? (byRole[bot.brain.role] || 'talon') : 'vesper');
   if (r >= 3 && won && bot.armor < 50) bot.armor = 50;
@@ -131,13 +134,12 @@ function botBuy(state, bot) {
 }
 
 export function startRound(state) {
-  // Ganti sisi setelah ronde 6 (best-of-13): pemain + rekan jadi DEF,
-  // musuh jadi ATK. TIDAK ADA overtime: bila 6-6, ronde ke-13 langsung
-  // jadi penentu (first-to-7).
+  // Halftime swap after round 6 (best-of-13, no overtime: at 6-6,
+  // round 13 is the decider, first-to-7).
   if (state.round === 7 && !state.swapped) {
     state.swapped = true;
     for (const a of state.agents) a.team = 1 - a.team;
-    for (const b of state.agents) if (b.isBot) b.brain.side = 1 - b.brain.side;
+    for (const b of state.agents) if (b.isBot) b.brain.side = b.brain.side === 'atk' ? 'def' : 'atk';
   }
   placeAgents(state);
   state.phase = PHASE.BUY;
@@ -206,16 +208,17 @@ function updatePlayer(state, dt) {
   const p = state.player;
   const input = state.input;
   if (!p.alive) return;
-  // Look.
-  p.yaw -= input.lookDX * 0.0022;
-  p.pitch = clamp(p.pitch - input.lookDY * 0.0022, -1.5, 1.5);
+  p.aiming = input.aim && !p.reloading;
+  const z = p.aiming && p.weapon ? p.weapon.def.zoom : 1;
+  // Look (sensitivity scaled down while aiming: x1/zoom).
+  p.yaw -= input.lookDX * 0.0022 / z;
+  p.pitch = clamp(p.pitch - input.lookDY * 0.0022 / z, -1.5, 1.5);
   input.lookDX = 0; input.lookDY = 0;
   p.crouched = input.crouch;
   p.strafe = input.strafe;
-  // Sprint (Shift) 6 m/s, jalan 4,2, jongkok 2,1 — dikali penalti
-  // kecepatan senjata (SMG penuh, rifle berat sedikit lebih lambat).
+  // Sprint (Shift) 6 m/s, walk 4.2, crouch 2.1 — times weapon penalty.
   const wSpeed = p.weapon ? p.weapon.def.speed : 1;
-  const speed = (input.crouch ? PLAYER_CROUCH : input.sprint ? PLAYER_SPRINT : PLAYER_SPEED) * wSpeed;
+  const speed = (input.crouch ? PLAYER_CROUCH : input.sprint ? PLAYER_SPRINT : PLAYER_SPEED) * wSpeed * (p.aiming ? 0.6 : 1);
   const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
   const rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
   const wx = (fx * input.fwd + rx * input.strafe) * speed;
@@ -299,6 +302,27 @@ function siteAt(state, x, z) {
   return null;
 }
 
+// Detonation shared by the planted timer and a fuse that runs out
+// mid-defuse: blast damage, then the round goes to the attackers.
+function detonate(state) {
+  const sp = state.spike;
+  sp.state = 'exploded';
+  state.explosion = { x: sp.x, y: 0, z: sp.z };
+  state.sfx.push('explosion');
+  state.cameraShake = 1;
+  for (const a of state.agents) {
+    if (!a.alive) continue;
+    const d = Math.hypot(a.x - sp.x, a.z - sp.z);
+    if (d < 13) {
+      const dmg = 120 - d * 7;
+      if (applyDamage(state, a, dmg, 'body', null) === 'kill') {
+        addFeed(state, `${a.name} killed by the blast`);
+      }
+    }
+  }
+  endRound(state, TEAM.ATK, 'Spike detonated');
+}
+
 function updateSpike(state, dt) {
   const sp = state.spike;
   if (sp.state === 'carried' || sp.state === 'dropped') {
@@ -316,11 +340,17 @@ function updateSpike(state, dt) {
   }
   if (sp.state === 'planting') {
     const c = sp.carrier;
-    const ok = c && c.alive && siteAt(state, c.x, c.z) === sp.site;
+    // Hold-to-plant (B05): releasing E (player) or leaving plant mode
+    // (bot) cancels the channel.
+    const ok = c && c.alive && siteAt(state, c.x, c.z) === sp.site
+      && (c.isBot ? c.brain.mode === 'plant' : state.input.interact);
     if (!ok) { sp.state = 'carried'; sp.progress = 0; return; }
     sp.progress += dt / PLANT_TIME;
     sp.x = c.x; sp.z = c.z;
     if (sp.progress >= 1) {
+      const s2 = state.mapData.sites[sp.site];
+      const dx = sp.x - s2.x, dz = sp.z - s2.z, d = Math.hypot(dx, dz), m = s2.r - 2;
+      if (d > m) { sp.x = s2.x + dx / d * m; sp.z = s2.z + dz / d * m; }
       sp.state = 'planted';
       sp.timer = SPIKE_TIME;
       sp.progress = 0;
@@ -333,7 +363,10 @@ function updateSpike(state, dt) {
   }
   if (sp.state === 'defusing') {
     const d = sp.defuser;
-    const ok = d && d.alive && Math.hypot(d.x - sp.x, d.z - sp.z) < 2.4;
+    // Hold-to-defuse: releasing E (player) or leaving defuse mode (bot)
+    // cancels; the fuse keeps ticking while defusing.
+    const ok = d && d.alive && Math.hypot(d.x - sp.x, d.z - sp.z) < 2.4
+      && (d.isBot ? d.brain.mode === 'defuse' : state.input.interact);
     if (!ok) { sp.state = 'planted'; sp.progress = 0; sp.defuser = null; return; }
     // Defuse 6 dtk, 4 dtk bila membawa kit.
     sp.progress += dt / (d.kit ? DEFUSE_TIME_KIT : DEFUSE_TIME);
@@ -341,7 +374,10 @@ function updateSpike(state, dt) {
       sp.state = 'defused';
       if (d.isPlayer) state.money = Math.min(MONEY_CAP, state.money + DEFUSE_REWARD);
       endRound(state, TEAM.DEF, 'Spike defused');
+      return;
     }
+    sp.timer -= dt;
+    if (sp.timer <= 0) detonate(state);
     return;
   }
   if (sp.state === 'planted') {
@@ -352,23 +388,7 @@ function updateSpike(state, dt) {
       sp.beepAt = state.time;
       state.sfx.push('beep');
     }
-    if (sp.timer <= 0) {
-      sp.state = 'exploded';
-      state.explosion = { x: sp.x, y: 0, z: sp.z };
-      state.sfx.push('explosion');
-      state.cameraShake = 1;
-      for (const a of state.agents) {
-        if (!a.alive) continue;
-        const d = Math.hypot(a.x - sp.x, a.z - sp.z);
-        if (d < 13) {
-          const dmg = 120 - d * 7;
-          if (applyDamage(state, a, dmg, 'body', null) === 'kill') {
-            addFeed(state, `${a.name} killed by the blast`);
-          }
-        }
-      }
-      endRound(state, TEAM.ATK, 'Spike detonated');
-    }
+    if (sp.timer <= 0) detonate(state);
   }
 }
 
@@ -396,6 +416,17 @@ function updateGrenades(state, dt) {
     g.vy -= 12 * dt;
     g.x += g.vx * dt; g.y += g.vy * dt; g.z += g.vz * dt;
     g.fuse -= dt;
+    // Walls stop grenades (B14): bounce off solids taller than the
+    // projectile, so nothing leaves through the perimeter.
+    for (const b of state.solids) {
+      if (b.y1 < g.y) continue;
+      _out.x = g.x; _out.z = g.z;
+      if (circleVsAABB(g.x, g.z, 0.15, b, _out)) {
+        if (_out.x !== g.x) g.vx = -g.vx * 0.35;
+        if (_out.z !== g.z) g.vz = -g.vz * 0.35;
+        g.x = _out.x; g.z = _out.z;
+      }
+    }
     if (g.y <= 0.12) {
       g.y = 0.12;
       if (Math.abs(g.vy) > 1.5) { g.vy = -g.vy * 0.35; g.vx *= 0.7; g.vz *= 0.7; g.bounced = true; }
@@ -438,20 +469,22 @@ function updateGrenades(state, dt) {
 
 export function endRound(state, winner, reason) {
   if (state.phase !== PHASE.LIVE) return;
-  state.score[winner]++;
-  state.roundHistory.push(winner);
+  // Score follows the ROSTER (B01), not the side: a roster's wins stick
+  // after the halftime swap.
+  const wR = rosterOf(state, winner), lR = 1 - wR;
+  state.score[wR]++;
+  state.roundHistory.push(wR);
   if (state.roundHistory.length > 13) state.roundHistory.shift();
   state.roundWinner = winner;
   state.roundReason = reason;
-  const loser = 1 - winner;
-  state.lossStreak[loser] = Math.min(3, state.lossStreak[loser] + 1);
-  state.lossStreak[winner] = 0;
+  state.lossStreak[lR] = Math.min(3, state.lossStreak[lR] + 1);
+  state.lossStreak[wR] = 0;
   // Ekonomi Supra, dibayar ke TIM PEMAIN (bukan selalu penyerang):
   // menang $2.800 (detonasi $3.200); kalah $1.800 + bonus kalah beruntun
   // +$400/ronde, total kalah maks $3.000; uang di-cap $10.000.
   const det = state.spike.state === 'exploded';
   const winPay = det ? WIN_REWARD_DET : WIN_REWARD;
-  const lossPay = Math.min(LOSS_REWARD_MAX, LOSS_REWARD + (state.lossStreak[loser] - 1) * LOSS_STREAK_BONUS);
+  const lossPay = Math.min(LOSS_REWARD_MAX, LOSS_REWARD + (state.lossStreak[lR] - 1) * LOSS_STREAK_BONUS);
   if (winner === state.player.team) state.money = Math.min(MONEY_CAP, state.money + winPay);
   else state.money = Math.min(MONEY_CAP, state.money + lossPay);
   const name = winner === TEAM.ATK ? 'ATTACKERS WIN' : 'DEFENDERS WIN';
@@ -462,11 +495,13 @@ export function endRound(state, winner, reason) {
 }
 
 function nextPhase(state) {
-  if (state.score[TEAM.ATK] >= WIN_ROUNDS || state.score[TEAM.DEF] >= WIN_ROUNDS) {
-    state.matchWinner = state.score[TEAM.ATK] >= WIN_ROUNDS ? TEAM.ATK : TEAM.DEF;
+  // First-to-7 by ROSTER (B01): the match ends the moment a roster
+  // reaches 7, whenever that happens — no extra rounds after a swap.
+  if (state.score[0] >= WIN_ROUNDS || state.score[1] >= WIN_ROUNDS) {
+    state.matchWinner = state.score[0] >= WIN_ROUNDS ? 0 : 1;
     state.phase = PHASE.MATCH;
-    setBanner(state, state.matchWinner === TEAM.ATK ? 'VICTORY!' : 'DEFEAT',
-      `Final score ${state.score[0]} — ${state.score[1]}. Click to play again.`, 999);
+    // No round banner here (B16): the match overlay is the only result.
+    state.bannerT = 0; state.banner = ''; state.bannerSub = '';
     return;
   }
   state.round++;
@@ -507,8 +542,8 @@ export function stepSim(state, dt) {
   }
   if (state.phase !== PHASE.LIVE) return;
 
-  // Round timer only runs while the spike is not planted.
-  if (state.spike.state !== 'planted') {
+  // Round timer only runs while the spike is not planted or defused.
+  if (state.spike.state !== 'planted' && state.spike.state !== 'defusing') {
     state.phaseT -= dt;
     if (state.phaseT <= 0) {
       endRound(state, TEAM.DEF, 'Time up — spike not planted');
@@ -521,9 +556,10 @@ export function stepSim(state, dt) {
   const input = state.input;
   if (p.alive) {
     updatePlayer(state, dt);
-    // Weapon slots.
-    if (input.slot === 0 && p.weapons[0]) { p.weapon = p.weapons[0]; p.slot = 0; }
-    if (input.slot === 1 && p.weapons[1]) { p.weapon = p.weapons[1]; p.slot = 1; }
+    // Weapon slots — a reload in progress keeps refilling the weapon
+    // that started it (B12), never the newly held one.
+    if (input.slot === 0 && p.weapons[0] && p.slot !== 0) { p.weapon = p.weapons[0]; p.slot = 0; }
+    if (input.slot === 1 && p.weapons[1] && p.slot !== 1) { p.weapon = p.weapons[1]; p.slot = 1; }
     input.slot = -1;
     // Reload.
     if (input.reload) { startReload(p, state.time); input.reload = false; }
@@ -559,11 +595,12 @@ export function stepSim(state, dt) {
   }
   // Spectate: camera follows the player, or the first living teammate.
   state.camAgent = p.alive ? p : (state.agents.find((a) => a.team === p.team && a.alive) || p);
-  if (!p.alive) { input.lookDX = 0; input.lookDY = 0; }
+  if (!p.alive) { input.lookDX = 0; input.lookDY = 0; p.aiming = false; }
 
   // --- bots ---
   for (const a of state.agents) {
     if (!a.isBot || !a.alive) continue;
+    if (a.weapon && a.weapon.ammo <= 0) startReload(a, state.time);
     const shot = updateBot(state, a, dt, state.rng, _shotOut);
     if (shot) {
       for (const r of shot) {
@@ -609,7 +646,11 @@ export function stepSim(state, dt) {
     }
   }
   if (sp.state === 'planted') {
-    const d = state.agents.find((a) => a.isBot && a.alive && a.brain.mode === 'defuse');
+    const d = state.agents.find((a) => a.isBot && a.alive && a.brain.mode === 'defuse'
+      && Math.hypot(a.x - sp.x, a.z - sp.z) < 2.4);
     if (d) { sp.state = 'defusing'; sp.defuser = d; sp.progress = 0; }
   }
+  // A wiped team loses the round, whatever killed them (shots call this
+  // via onKill; the per-step call also covers blasts and direct wipes).
+  checkElimination(state);
 }

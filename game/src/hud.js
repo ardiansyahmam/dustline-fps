@@ -1,22 +1,17 @@
 // DUSTLINE — HUD: DOM overlay (crosshair, bars, timers, feed, banners,
 // buy menu, scoreboard). Reads state only; the sim never touches the DOM.
-// Cheap updates: text is rewritten only when it changes.
-
 import { WEAPONS, ARMOR_PRICE, HELMET_PRICE, KIT_PRICE, BLINK_PRICE, HAZE_PRICE, buyItem, currentSpread } from './weapons.js';
 import { PHASE, TEAM } from './state.js';
 
-// Buy menu — card grid like the reference shop: name + role on top, weapon
-// silhouette in the middle, BIG price with $, orange BUY button. Money on
-// top; unaffordable items dimmed + button disabled; equipped weapon gets
-// an EQUIPPED badge. Keys 1-5 weapons + 6-9,0 the rest still work as
-// keyboard shortcuts (buy phase is only 12 s). Each card carries its
-// weapon's vivid color as the art + top accent.
+// Buy menu — card grid: name + role on top, weapon silhouette middle,
+// BIG price + orange BUY button. Unaffordable items dim; equipped gets
+// an EQUIPPED badge. Keys 1-5 weapons, 6-9/0 the rest (buy phase is 12 s).
 const BUY_ITEMS = [
-  { id: 'vesper', name: 'Vesper-9', desc: 'SMG — close entry', price: WEAPONS.vesper.price, key: '1', art: 'smg', color: '#2fd8c8' },
-  { id: 'talon', name: 'Talon-5', desc: 'Rifle — all-rounder', price: WEAPONS.talon.price, key: '2', art: 'rifle', color: '#ff7a2e' },
-  { id: 'cinder', name: 'Cinder .50', desc: 'Magnum — one hard hit', price: WEAPONS.cinder.price, key: '3', art: 'magnum', color: '#ffc93c' },
-  { id: 'brine', name: 'Brine-12', desc: 'Shotgun — deadly up close', price: WEAPONS.brine.price, key: '4', art: 'shotgun', color: '#e8402e' },
-  { id: 'rift', name: 'Rift-47', desc: 'Rifle — heavy damage', price: WEAPONS.rift.price, key: '5', art: 'rifle2', color: '#9ab83c' },
+  { id: 'vesper', name: 'Vesper-9', desc: 'SMG — close entry', price: WEAPONS.vesper.price, key: '1', art: 'smg', color: '#2fd8c8', scope: '1x — iron sights' },
+  { id: 'talon', name: 'Talon-5', desc: 'Rifle — all-rounder', price: WEAPONS.talon.price, key: '2', art: 'rifle', color: '#ff7a2e', scope: '2x' },
+  { id: 'cinder', name: 'Cinder .50', desc: 'Magnum — one hard hit', price: WEAPONS.cinder.price, key: '3', art: 'magnum', color: '#ffc93c', scope: '2x' },
+  { id: 'brine', name: 'Brine-12', desc: 'Shotgun — deadly up close', price: WEAPONS.brine.price, key: '4', art: 'shotgun', color: '#e8402e', scope: '1x — iron sights' },
+  { id: 'rift', name: 'Rift-47', desc: 'Rifle — heavy damage', price: WEAPONS.rift.price, key: '5', art: 'rifle2', color: '#9ab83c', scope: '3x' },
   { id: 'armor', name: 'Bulletproof Vest', desc: 'Armor +50', price: ARMOR_PRICE, key: '6', art: 'vest', color: '#2fa8a0' },
   { id: 'helmet', name: 'Helmet', desc: 'Headshot −35%', price: HELMET_PRICE, key: '7', art: 'helmet', color: '#c9a86a' },
   { id: 'kit', name: 'Defuse Kit', desc: 'Defuse in 4s', price: KIT_PRICE, key: '8', art: 'kit', color: '#37c978' },
@@ -62,6 +57,7 @@ export function createHud(state) {
       <span class="buy-badge">EQUIPPED</span>
       <div class="buy-name">${item.name}</div>
       <div class="buy-desc">${item.desc}</div>
+      ${item.scope ? `<div class="buy-scope">Scope ${item.scope}</div>` : ''}
       <div class="buy-art" style="color:${item.color}">${buyArt(item.art)}</div>
       <div class="buy-price">${fmtMoney(item.price)}</div>
       <button class="buy-btn" tabindex="-1">BUY</button>`;
@@ -73,9 +69,10 @@ export function createHud(state) {
     });
     itemsEl.appendChild(card);
   }
-  // Buy hotkeys 1-9, 0 while the menu is open.
+  // Buy hotkeys 1-9, 0 while the menu is open; Esc closes it (B11).
   window.addEventListener('keydown', (e) => {
     if (!hud.buyOpen) return;
+    if (e.code === 'Escape') { hud.toggleBuy(false); return; }
     const item = BUY_ITEMS.find((b) => b.key === e.code.replace('Digit', ''));
     if (!item) return;
     const msg = buyItem(state, item.id);
@@ -110,7 +107,13 @@ export function createHud(state) {
     hud.buyOpen = want;
     state.buyOpen = want;
     el('buy').classList.toggle('open', want);
-    if (want) refreshBuy(state);
+    // Pointer lock (B10): free the cursor while shopping so cards can
+    // be clicked, re-lock when the shop closes (buy/live only).
+    if (want) { refreshBuy(state); document.exitPointerLock(); }
+    else if (state.phase === PHASE.BUY || state.phase === PHASE.LIVE) {
+      const r = el('game').requestPointerLock();
+      if (r && r.catch) r.catch(() => {});
+    }
   };
   return hud;
 }
@@ -118,6 +121,9 @@ export function createHud(state) {
 export function updateHud(hud, state) {
   const p = state.player;
   const input = state.input;
+
+  // Shop closes the moment the buy phase ends (B09).
+  if (hud.buyOpen && state.phase !== PHASE.BUY) hud.toggleBuy(false);
 
   // Buy menu toggle (B).
   if (input.buy) hud.toggleBuy();
@@ -135,11 +141,20 @@ export function updateHud(hud, state) {
     buy: isDecider ? 'BUY PHASE · ROUND 13 · DECIDER' : `BUY PHASE · ROUND ${state.round}`,
     live: roundInfo, end: 'ROUND OVER', match: 'MATCH OVER' }[state.phase]);
 
-  // Score + alive.
-  setText(el('score-atk'), String(state.score[TEAM.ATK]));
-  setText(el('score-def'), String(state.score[TEAM.DEF]));
-  const aliveAtk = state.agents.filter((a) => a.team === TEAM.ATK && a.alive).length;
-  const aliveDef = state.agents.filter((a) => a.team === TEAM.DEF && a.alive).length;
+// Score + alive — ROSTER scores (B01): left slot is always the
+  // player's roster (teal), right the enemy roster (orange); side
+  // names follow whichever side each roster currently plays.
+  const plAtk = p.team === TEAM.ATK;
+  setText(el('tnL'), plAtk ? 'ATTACKERS' : 'DEFENDERS');
+  setText(el('tnR'), plAtk ? 'DEFENDERS' : 'ATTACKERS');
+  setText(el('snL'), plAtk ? 'ATTACKERS' : 'DEFENDERS');
+  setText(el('snR'), plAtk ? 'DEFENDERS' : 'ATTACKERS');
+  setText(el('stL'), plAtk ? 'ATTACKERS' : 'DEFENDERS');
+  setText(el('stR'), plAtk ? 'DEFENDERS' : 'ATTACKERS');
+  setText(el('score-atk'), String(state.score[0]));
+  setText(el('score-def'), String(state.score[1]));
+  const aliveAtk = state.agents.filter((a) => a.team === p.team && a.alive).length;
+  const aliveDef = state.agents.filter((a) => a.team !== p.team && a.alive).length;
   setText(el('alive-atk'), '●'.repeat(aliveAtk) + '○'.repeat(3 - aliveAtk));
   setText(el('alive-def'), '●'.repeat(aliveDef) + '○'.repeat(3 - aliveDef));
 
@@ -175,9 +190,12 @@ export function updateHud(hud, state) {
 
   // Crosshair spread.
   const spread = w ? currentSpread(p) : 0.02;
-  const gap = 7 + spread * 420 + p.spread * 260;
+  const gap = (7 + spread * 420 + p.spread * 260) * (p.aiming ? 0.4 : 1);
   el('crosshair').style.setProperty('--sp', `${gap.toFixed(1)}px`);
   el('crosshair').style.display = (hud.buyOpen || state.phase === PHASE.MENU || state.phase === PHASE.MATCH || !p.alive || input.score) ? 'none' : 'block';
+  // Scope overlay (2x/3x circle mask) + zoom label near the ammo.
+  el('scope').classList.toggle('show', !!p.aiming && !!w && w.def.zoom > 1 && p.alive && state.phase === PHASE.LIVE && !hud.buyOpen && !input.score);
+  setText(el('zoom'), p.aiming && w && state.phase === PHASE.LIVE ? w.def.zoom + 'x' : '');
 
   // Hitmarker + damage vignette.
   el('hitmarker').classList.toggle('show', state.hitmark > 0);
@@ -221,10 +239,10 @@ export function updateHud(hud, state) {
   // banner never bleeds through the scoreboard panel.
   const banner = el('banner');
   banner.classList.toggle('show', state.bannerT > 0 && !input.score);
-  if (state.bannerT > 0) {
-    setText(el('banner-title'), state.banner);
-    setText(el('banner-sub'), state.bannerSub);
-  }
+  // Always write the text (empty when the banner is off) so no stale
+  // result lingers in the DOM under the match overlay (B16).
+  setText(el('banner-title'), state.bannerT > 0 ? state.banner : '');
+  setText(el('banner-sub'), state.bannerT > 0 ? state.bannerSub : '');
 
   // Buy hint.
   el('buy-hint').style.display = state.phase === PHASE.BUY && !hud.buyOpen ? 'block' : 'none';
@@ -233,7 +251,8 @@ export function updateHud(hud, state) {
   el('menu').classList.toggle('show', state.phase === PHASE.MENU);
   el('match').classList.toggle('show', state.phase === PHASE.MATCH);
   if (state.phase === PHASE.MATCH) {
-    setText(el('match-title'), state.matchWinner === TEAM.ATK ? 'VICTORY!' : 'DEFEAT');
+    // Result follows the player's ROSTER (B01): 0 = player roster won.
+    setText(el('match-title'), state.matchWinner === 0 ? 'VICTORY!' : 'DEFEAT');
     setText(el('match-sub'), `Final score ${state.score[0]} — ${state.score[1]} · Click to play again`);
   }
 
@@ -273,8 +292,8 @@ export function updateHud(hud, state) {
           : w === TEAM.DEF ? '<span class="pip-def">●</span>' : '<span class="pip-todo">○</span>';
       }
       el('sb-pips').innerHTML = pips + ` <span style="opacity:.6;font-size:12px">round history (first to 7)</span>`;
-      setText(el('sb-atk-score'), String(state.score[TEAM.ATK]));
-      setText(el('sb-def-score'), String(state.score[TEAM.DEF]));
+      setText(el('sb-atk-score'), String(state.score[0]));
+      setText(el('sb-def-score'), String(state.score[1]));
       const rowHtml = (a) => {
         const hp = a.alive ? `<span class="sb-hp${a.hp <= 30 ? ' low' : ''}"><i style="width:${Math.max(0, a.hp)}%"></i></span> ${Math.ceil(a.hp)}`
           : '<span style="opacity:.6">DEAD</span>';
@@ -282,8 +301,8 @@ export function updateHud(hud, state) {
         const star = a === mvp && (a.kills > 0 || a.dmg > 0) ? ' ★' : '';
         return `<tr class="${cls}"><td>${a.name}${star}</td><td>${a.kills}</td><td>${a.deaths}</td><td>${a.dmg}</td><td>${a.weapon ? a.weapon.def.name : '—'}</td><td>${hp}</td></tr>`;
       };
-      el('sb-atk-rows').innerHTML = state.agents.filter((a) => a.team === TEAM.ATK).map(rowHtml).join('');
-      el('sb-def-rows').innerHTML = state.agents.filter((a) => a.team === TEAM.DEF).map(rowHtml).join('');
+      el('sb-atk-rows').innerHTML = state.agents.filter((a) => a.team === p.team).map(rowHtml).join('');
+      el('sb-def-rows').innerHTML = state.agents.filter((a) => a.team !== p.team).map(rowHtml).join('');
       setText(el('sb-mvp'), mvp && (mvp.kills > 0 || mvp.dmg > 0) ? `★ MVP: ${mvp.name} — ${mvp.kills} kills, ${mvp.dmg} damage` : '');
       setText(el('sb-money'), `Team money: ${fmtMoney(state.money)} · Hold Tab to view · Release to close`);
     }

@@ -1,11 +1,7 @@
-// DUSTLINE — bots: waypoint navigation, sight/hearing perception, hold and
-// push tactics, plant/defuse behaviour. One brain per bot, no allocation
-// in the per-frame path (paths are small reused arrays).
-// Desain Supra: 5 role per ronde (entry/support/mid-control/anchor/
-// lurker); cone penglihatan 105° sampai 26 m; dengar langkah 17 m
-// (35 m di atas grate Pump Duct), tembakan 35 m; reaksi 0,25-0,55 dtk;
-// aim settle 0,35-0,8 dtk; TIDAK PERNAH menembak menembus dinding
-// (hasLOS + traceShot sudah menegakkannya).
+// DUSTLINE — bots: waypoint nav, sight/hearing, hold/push tactics,
+// plant/defuse. One brain per bot. 5 roles/round (entry/support/mid/
+// anchor/lurker); sight cone 105° to 26 m; hearing 17 m (35 m on the
+// Pump Duct grate); reaction 0.25-0.55 s; never shoot through walls.
 
 import { angleDiff, angleLerp, clamp, hasLOS } from './utils.js';
 import { fireWeapon, canFire } from './weapons.js';
@@ -323,17 +319,18 @@ export function updateBot(state, bot, dt, rng, shotOut) {
   } else {
     // Defenders.
     if (sp.state === 'planted') {
-      // Retake: konvergen ke spike yang ditanam; yang terdekat defuse.
-      // Dua sudut, bukan berlari satu-satu: rotator kedua lewat Pump
-      // Duct (waypoint 14), yang pertama langsung.
+      // Retake: converge on the SPIKE itself (B04 — the site waypoint is
+      // not the target; the spike can sit metres from it). Close in
+      // direct, farther out path to the nearest waypoint of the spike.
       const dSpike = Math.hypot(sp.x - bot.x, sp.z - bot.z);
       if (dSpike < 2.2) {
         b.mode = 'defuse';
         return null;
       }
+      if (dSpike < 6) { steerTo(bot, sp.x, sp.z, 3.8); return null; }
       if (b.mode !== 'push' || b.pathI >= b.path.length) {
         const from = nearestWaypoint(wps, bot.x, bot.z);
-        const target = sp.site === 'A' ? 16 : 15;
+        const target = nearestWaypoint(wps, sp.x, sp.z);
         const alreadyPushing = state.agents.filter((a) => a.isBot && a.team === bot.team
           && a !== bot && a.brain.mode === 'push').length;
         if (alreadyPushing >= 1) pathVia(wps, from, 14, target, b.path);
@@ -342,6 +339,10 @@ export function updateBot(state, bot, dt, rng, shotOut) {
         b.mode = 'push';
       }
       followPath(state, bot, dt, 3.8);
+    } else if (b.mode === 'defuse' && sp.state === 'defusing') {
+      // Mid-defuse: hold still on the spike, never wander off.
+      steerTo(bot, bot.x, bot.z, 0);
+      return null;
     } else if (b.mode === 'investigate') {
       const d = steerTo(bot, b.lastSeenX, b.lastSeenZ, 3.8);
       if (d < 1.5) { b.mode = 'hold'; b.holdT = 2 + rng() * 3; }

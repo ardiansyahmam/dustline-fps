@@ -1,20 +1,14 @@
-// DUSTLINE — weapons: fictional loadout, hitscan fire, damage per body part,
-// recoil/spread that punishes firing on the move, reload, economy prices.
-// Pure data + pure-ish functions: the sim calls these, render draws tracers.
-
+// DUSTLINE — weapons: fictional loadout, hitscan fire, damage per body
+// part, recoil/spread, reload, economy prices. Pure data + functions.
 import { rayVsBox } from './utils.js';
 
-// DUSTLINE — weapons: loadout desain Supra (5 senjata + pistol standar
-// gratis). Damage ABSOLUT per bagian tubuh (kepala/badan/kaki, 100 HP),
-// spread dalam radian (setengah sudut kerucut: angka Supra °/2),
-// recoil per tembakan, penetrasi armor, penalti kecepatan gerak,
-// reward kill per senjata, dan falloff jarak jauh.
-// Celah desain yang diisi: recoil (baru kualitatif -> angka), waktu reload,
-// penalti gerak, falloff, armor penetration — lihat nilai di bawah.
+// Loadout (Supra): 5 weapons + free pistol. Damage is absolute per body
+// part (head/body/leg, 100 HP); spread in radians (half-cone angle);
+// recoil per shot, armor penetration, movement penalty, kill reward,
+// long-range falloff. Values below.
 export const WEAPONS = {
-  // color / colorDark: vivid per-weapon identity (viewmodel + buy card +
-  // bot gun). Dustline palette, pushed saturated so each gun reads at a
-  // glance: slate-blue pistol, teal SMG, rust-orange rifle, gold magnum,
+  // Vivid per-weapon color identity (viewmodel + buy card + bot gun):
+  // slate-blue pistol, teal SMG, rust-orange rifle, gold magnum,
   // brick-red shotgun, olive rifle.
   p9: {
     id: 'p9', name: 'P9 Sidearm', kind: 'pistol', price: 0,
@@ -22,7 +16,7 @@ export const WEAPONS = {
     damage: 20, head: 36, leg: 14, rpm: 320, mag: 12, reserve: 48,
     reload: 1.6, spread: 0.006, moveSpread: 0.016, airSpread: 0.05,
     recoil: 0.028, auto: false, pellets: 1, range: 55,
-    pen: 0.5, killReward: 200, speed: 1.0,
+    pen: 0.5, killReward: 200, speed: 1.0, zoom: 1,
   },
   vesper: {
     id: 'vesper', name: 'Vesper-9', kind: 'smg', price: 1750,
@@ -30,7 +24,7 @@ export const WEAPONS = {
     damage: 22, head: 38, leg: 16, rpm: 750, mag: 32, reserve: 128,
     reload: 1.9, spread: 0.007, moveSpread: 0.016, airSpread: 0.06,
     recoil: 0.011, auto: true, pellets: 1, range: 60,
-    pen: 0.5, killReward: 300, speed: 1.0,
+    pen: 0.5, killReward: 300, speed: 1.0, zoom: 1,
   },
   talon: {
     id: 'talon', name: 'Talon-5', kind: 'rifle', price: 2500,
@@ -38,7 +32,7 @@ export const WEAPONS = {
     damage: 27, head: 54, leg: 20, rpm: 600, mag: 30, reserve: 90,
     reload: 2.2, spread: 0.005, moveSpread: 0.011, airSpread: 0.055,
     recoil: 0.016, auto: true, pellets: 1, range: 85,
-    pen: 0.65, killReward: 200, speed: 0.97,
+    pen: 0.65, killReward: 200, speed: 0.97, zoom: 2,
   },
   cinder: {
     id: 'cinder', name: 'Cinder .50', kind: 'magnum', price: 650,
@@ -46,7 +40,7 @@ export const WEAPONS = {
     damage: 48, head: 90, leg: 36, rpm: 240, mag: 6, reserve: 24,
     reload: 2.4, spread: 0.004, moveSpread: 0.022, airSpread: 0.06,
     recoil: 0.07, auto: false, pellets: 1, range: 90,
-    pen: 0.85, killReward: 300, speed: 0.94,
+    pen: 0.85, killReward: 300, speed: 0.94, zoom: 2,
   },
   brine: {
     id: 'brine', name: 'Brine-12', kind: 'shotgun', price: 1850,
@@ -54,7 +48,7 @@ export const WEAPONS = {
     damage: 6, head: 8, leg: 4, rpm: 78, mag: 8, reserve: 32,
     reload: 2.8, spread: 0.057, moveSpread: 0.01, airSpread: 0.06,
     recoil: 0.06, auto: false, pellets: 8, range: 26,
-    pen: 0.4, killReward: 500, speed: 0.95, falloff: 'shotgun',
+    pen: 0.4, killReward: 500, speed: 0.95, zoom: 1, falloff: 'shotgun',
   },
   rift: {
     id: 'rift', name: 'Rift-47', kind: 'rifle', price: 2850,
@@ -62,7 +56,7 @@ export const WEAPONS = {
     damage: 31, head: 62, leg: 23, rpm: 540, mag: 30, reserve: 90,
     reload: 2.4, spread: 0.008, moveSpread: 0.017, airSpread: 0.06,
     recoil: 0.026, auto: true, pellets: 1, range: 85,
-    pen: 0.6, killReward: 200, speed: 0.95,
+    pen: 0.6, killReward: 200, speed: 0.95, zoom: 3,
   },
 };
 
@@ -91,6 +85,7 @@ export function currentSpread(agent) {
   if (moving > 0.5) s += w.moveSpread * Math.min(1, moving / 4.5);
   if (!agent.onGround) s += w.airSpread;
   if (agent.crouched) s *= 0.7;
+  if (agent.aiming) s *= [0, 0.45, 0.35, 0.3][w.zoom];
   return s;
 }
 
@@ -215,6 +210,14 @@ export function applyDamage(state, target, raw, part, attacker, dist = 0) {
   target.hp = 0;
   target.alive = false;
   target.vx = 0; target.vz = 0;
+  // Death costs the loadout (B08): primary, grenades and gear are lost.
+  // Here, not in onKill — every death path (shots AND the spike blast)
+  // funnels through applyDamage, so nothing can keep a dead loadout.
+  if (target.isPlayer) {
+    target.weapons[0] = null; target.weapon = target.weapons[1]; target.slot = 1;
+    target.grenades.blink = 0; target.grenades.haze = 0;
+    target.armor = 0; target.helmet = false; target.kit = false;
+  }
   return 'kill';
 }
 
@@ -223,17 +226,19 @@ export function startReload(agent, now) {
   const w = agent.weapon;
   if (w.ammo >= w.def.mag || w.reserve <= 0) return false;
   agent.reloading = true;
-  agent.reloadEnd = now + w.def.reload;
+  agent.reloadWeapon = w; // the mag lands on THIS weapon (B12), even
+  agent.reloadEnd = now + w.def.reload; // if the holder switches mid-reload
   return true;
 }
 
 export function finishReload(agent) {
-  const w = agent.weapon;
+  const w = agent.reloadWeapon || agent.weapon;
   const need = w.def.mag - w.ammo;
   const take = Math.min(need, w.reserve);
   w.ammo += take;
   w.reserve -= take;
   agent.reloading = false;
+  agent.reloadWeapon = null;
 }
 
 // Buy phase purchases. Returns a message string ('' on success is 'ok').
@@ -246,6 +251,7 @@ export function buyItem(state, itemId) {
     return 'ok';
   };
   if (itemId === 'armor') {
+    if (p.armor >= 100) return 'Armor already full.';
     const r = spend(ARMOR_PRICE);
     if (r === 'ok') p.armor = Math.min(100, p.armor + 50);
     return r;
@@ -263,11 +269,13 @@ export function buyItem(state, itemId) {
     return r;
   }
   if (itemId === 'blink') {
+    if (p.grenades.blink >= 2) return 'Grenades full.';
     const r = spend(BLINK_PRICE);
     if (r === 'ok') p.grenades.blink = Math.min(2, p.grenades.blink + 1);
     return r;
   }
   if (itemId === 'haze') {
+    if (p.grenades.haze >= 2) return 'Grenades full.';
     const r = spend(HAZE_PRICE);
     if (r === 'ok') p.grenades.haze = Math.min(2, p.grenades.haze + 1);
     return r;

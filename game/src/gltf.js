@@ -1,11 +1,9 @@
-// DUSTLINE — gltf.js: a minimal GLB loader, written for this game.
-// Parses a GLB v2 container (JSON chunk + BIN chunk), builds a three.js
-// scene of SkinnedMeshes with one shared Skeleton, and turns the file's
-// skeletal animations into THREE.AnimationClips. No GLTFLoader vendored:
-// this file is ours, so it counts toward the bounty transcript budget.
-// Supports: node matrix / TRS, POSITION / NORMAL / COLOR_0 / indices,
-// JOINTS_0 + WEIGHTS_0 skins, LINEAR rotation / translation / scale
-// animation tracks. Vertex colors only — Polyfork models have no textures.
+// DUSTLINE — gltf.js: minimal GLB v2 loader, written for this game.
+// Parses JSON+BIN chunks into SkinnedMeshes with one shared Skeleton
+// and turns skeletal animations into THREE.AnimationClips. No
+// GLTFLoader vendored — this file is ours. Supports node matrix/TRS,
+// POSITION/NORMAL/COLOR_0/indices, JOINTS_0+WEIGHTS_0 skins, LINEAR
+// animation tracks. Vertex colors only (no textures).
 
 const COMP_BYTES = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
 const COMP_CTOR = {

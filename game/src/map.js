@@ -1,20 +1,8 @@
-// DUSTLINE — map: an abandoned solar plant in a dust basin.
-// Layout (metres, origin at centre, north = -z), desain Supra:
-//   x in [-32,32], z in [-22,22]. Attackers spawn south, defenders north.
-//   A SOLAR ARRAY (NE): lapangan panel surya terbuka, barisan panel
-//     rendah, Relay Hut (control hut) sebagai hard cover; masuk lewat
-//     East Service (flank timur) atau ramp dari Mid.
-//   B PUMP HOUSE (NW): lebih rapat, tangki silinder, pipa besar, platform
-//     kontrol; masuk lewat Pump Duct atau Cooling Trench (flank barat).
-//   MID — Inverter Court + gantry: sightline panjang terpecah inverter
-//     dan gantry; choke Mid gantry di celah tengah.
-//   Rotasi A<->B: Solar Spine (jalur utara, lebih panjang, terekspos)
-//     dan Pump Duct (lebih cepat, langkah di atas grate TERDENGAR).
-//   Choke utama: A Gate, Mid gantry, mulut Pump Duct.
-//   TIDAK ADA site yang terlihat langsung dari spawn penyerang
-//     (divider wall menutup sightline dari selatan).
-// All geometry is built from code (BoxGeometry + canvas textures); repeated
-// props are spread with InstancedMesh, one draw call per part type.
+// DUSTLINE — map: abandoned solar plant, origin centre, north = -z.
+// x [-32,32], z [-22,22]. A Solar Array (NE, open), B Pump House (NW,
+// tight), Mid Inverter Court + gantry. Rotations: Solar Spine (north,
+// long, exposed) and Pump Duct (fast, grate steps are loud). No site is
+// visible straight from the attacker spawn. All geometry from code.
 
 import * as THREE from 'three';
 
@@ -30,8 +18,8 @@ export const MAP = {
   },
 };
 
-// Named zones (desain Supra): rotation routes, choke points, the
-// audible grate corridor. The sim reads `duct` for footstep hearing.
+// Named zones: rotation routes, choke points, the audible grate.
+// The sim reads `duct` for footstep hearing.
 export const ZONES = {
   spine: { name: 'Solar Spine', waypoints: [11, 17, 13] }, // north lane, long + exposed
   duct: { name: 'Pump Duct', x0: -8, z0: -11, x1: 8, z1: -5, waypoints: [10, 14, 12] }, // fast route, grate is loud

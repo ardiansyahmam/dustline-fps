@@ -40,7 +40,7 @@ export function createAgent(id, name, team, isPlayer, isBot) {
     weapon: null,               // weapon instance (see weapons.js)
     weapons: [null, null, null],// slots: 0 primary, 1 secondary, 2 melee none
     slot: 0,
-    spread: 0, recoil: 0,       // current bloom / kick
+    spread: 0, recoil: 0, aiming: false, // current bloom / kick
     lastShot: -99, reloading: false, reloadEnd: 0,
     grenades: { blink: 0, haze: 0 },
     // bot brain (unused for the player)
@@ -62,8 +62,8 @@ export function createState(seed) {
     phase: PHASE.MENU,
     phaseT: 0,                  // time left in this phase
     round: 1,
-    score: [0, 0],              // [ATK, DEF]
-    roundHistory: [],           // winner team per finished round (max 13)
+    score: [0, 0],              // roster wins: [player squad, enemy squad]
+    roundHistory: [],           // winner roster per finished round (max 13)
     lossStreak: [0, 0],
     swapped: false,             // sides swapped after round 6 (best-of-13)
     intel: { A: -99, B: -99 },  // last clock time a DEFENDER was seen/heard near each site
@@ -92,7 +92,7 @@ export function createState(seed) {
     // input intent, written by input.js, read by sim
     input: {
       fwd: 0, strafe: 0, jump: false, crouch: false, sprint: false,
-      fire: false, fireEdge: false, reload: false, buy: false,
+      fire: false, fireEdge: false, reload: false, buy: false, aim: false,
       grenade: false, interact: false, slot: -1, score: false,
       lookDX: 0, lookDY: 0,
     },
