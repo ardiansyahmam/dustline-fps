@@ -156,8 +156,8 @@ export function startRound(state) {
   state.roundReason = '';
   state.camAgent = state.player;
   for (const b of state.agents) if (b.isBot) botBuy(state, b);
-  if (state.round === 7) setBanner(state, 'RONDE 7 — GANTI SISI', 'Kamu sekarang bertahan — jaga kedua site', 3);
-  else setBanner(state, `RONDE ${state.round}`, 'Fase beli — tekan B untuk belanja', 3);
+  if (state.round === 7) setBanner(state, 'ROUND 7 — SIDES SWITCHED', 'You are defending now — hold both sites', 3);
+  else setBanner(state, `ROUND ${state.round}`, 'Buy phase — press B to shop', 3);
 }
 
 // ---- movement ----
@@ -238,7 +238,7 @@ function doShoot(state, shooter) {
     });
     if (r.hit) {
       const res = applyDamage(state, r.hit, shooter.weapon.def.damage, r.part, shooter, r.dist);
-      if (res === 'kill') onKill(state, shooter, r.hit);
+      if (res === 'kill') onKill(state, shooter, r.hit, r.part);
       else state.sfx.push(shooter.isPlayer ? 'hit' : 'hitFar');
     }
   }
@@ -247,10 +247,12 @@ function doShoot(state, shooter) {
   botHeardShot(state, shooter);
 }
 
-function onKill(state, attacker, victim) {
+function onKill(state, attacker, victim, part) {
   if (attacker) attacker.kills++;
   victim.deaths++;
-  addFeed(state, `${attacker.name} ▸ ${victim.name}`);
+  // Kill feed: gold for a kill, orange for a headshot (the HUD colors
+  // the line by its content — see hud.js).
+  addFeed(state, `${attacker.name} ▸ ${victim.name}${part === 'head' ? ' — HEADSHOT' : ''}`);
   if (attacker.isPlayer) {
     // Reward kill mengikuti senjata (Vesper 300, Talon/Rift 200,
     // Magnum 300, Brine 500), dibatasi cap uang $10.000.
@@ -283,8 +285,8 @@ function checkElimination(state) {
   if (state.spike.state === 'planted') return; // spike decides the round
   const atkAlive = state.agents.some((a) => a.team === TEAM.ATK && a.alive);
   const defAlive = state.agents.some((a) => a.team === TEAM.DEF && a.alive);
-  if (!atkAlive) endRound(state, TEAM.DEF, 'Tim musuh dihabisi');
-  else if (!defAlive) endRound(state, TEAM.ATK, 'Tim musuh dihabisi');
+  if (!atkAlive) endRound(state, TEAM.DEF, 'Enemy team eliminated');
+  else if (!defAlive) endRound(state, TEAM.ATK, 'Enemy team eliminated');
 }
 
 // ---- spike (bomb) ----
@@ -305,7 +307,7 @@ function updateSpike(state, dt) {
       for (const a of state.agents) {
         if (a.team === TEAM.ATK && a.alive && Math.hypot(a.x - sp.x, a.z - sp.z) < 1.5) {
           sp.state = 'carried'; sp.carrier = a; sp.progress = 0;
-          if (a.isPlayer) addFeed(state, 'Kamu mengambil spike');
+          if (a.isPlayer) addFeed(state, 'You picked up the spike');
           break;
         }
       }
@@ -323,8 +325,8 @@ function updateSpike(state, dt) {
       sp.timer = SPIKE_TIME;
       sp.progress = 0;
       if (c.isPlayer) state.money = Math.min(MONEY_CAP, state.money + PLANT_REWARD);
-      addFeed(state, 'Spike ditanam di Site ' + sp.site);
-      setBanner(state, 'SPIKE DITANAM', 'Site ' + sp.site + ' — pertahankan sampai meledak', 3);
+      addFeed(state, 'Spike planted at Site ' + sp.site);
+      setBanner(state, 'SPIKE PLANTED', 'Site ' + sp.site + ' — hold it until it detonates', 3);
       state.sfx.push('planted');
     }
     return;
@@ -338,7 +340,7 @@ function updateSpike(state, dt) {
     if (sp.progress >= 1) {
       sp.state = 'defused';
       if (d.isPlayer) state.money = Math.min(MONEY_CAP, state.money + DEFUSE_REWARD);
-      endRound(state, TEAM.DEF, 'Spike berhasil dijinakkan');
+      endRound(state, TEAM.DEF, 'Spike defused');
     }
     return;
   }
@@ -361,11 +363,11 @@ function updateSpike(state, dt) {
         if (d < 13) {
           const dmg = 120 - d * 7;
           if (applyDamage(state, a, dmg, 'body', null) === 'kill') {
-            addFeed(state, `${a.name} tewas oleh ledakan`);
+            addFeed(state, `${a.name} killed by the blast`);
           }
         }
       }
-      endRound(state, TEAM.ATK, 'Spike meledak');
+      endRound(state, TEAM.ATK, 'Spike detonated');
     }
   }
 }
@@ -452,7 +454,7 @@ export function endRound(state, winner, reason) {
   const lossPay = Math.min(LOSS_REWARD_MAX, LOSS_REWARD + (state.lossStreak[loser] - 1) * LOSS_STREAK_BONUS);
   if (winner === state.player.team) state.money = Math.min(MONEY_CAP, state.money + winPay);
   else state.money = Math.min(MONEY_CAP, state.money + lossPay);
-  const name = winner === TEAM.ATK ? 'TIM PENYERANG MENANG' : 'TIM BERTAHAN MENANG';
+  const name = winner === TEAM.ATK ? 'ATTACKERS WIN' : 'DEFENDERS WIN';
   setBanner(state, name, reason, END_TIME);
   state.sfx.push(winner === state.player.team ? 'roundWin' : 'roundLose');
   state.phase = PHASE.END;
@@ -463,8 +465,8 @@ function nextPhase(state) {
   if (state.score[TEAM.ATK] >= WIN_ROUNDS || state.score[TEAM.DEF] >= WIN_ROUNDS) {
     state.matchWinner = state.score[TEAM.ATK] >= WIN_ROUNDS ? TEAM.ATK : TEAM.DEF;
     state.phase = PHASE.MATCH;
-    setBanner(state, state.matchWinner === TEAM.ATK ? 'KEMENANGAN!' : 'KEKALAHAN',
-      `Skor akhir ${state.score[0]} — ${state.score[1]}. Klik untuk main lagi.`, 999);
+    setBanner(state, state.matchWinner === TEAM.ATK ? 'VICTORY!' : 'DEFEAT',
+      `Final score ${state.score[0]} — ${state.score[1]}. Click to play again.`, 999);
     return;
   }
   state.round++;
@@ -493,7 +495,7 @@ export function stepSim(state, dt) {
       state.phase = PHASE.LIVE;
       state.phaseT = ROUND_TIME;
       state.roundT0 = state.time;
-      setBanner(state, 'RONDE DIMULAI', 'Tanam spike atau habisi musuh', 2.5);
+      setBanner(state, 'ROUND START', 'Plant the spike or eliminate the enemy', 2.5);
       state.sfx.push('roundStart');
     }
     return;
@@ -509,7 +511,7 @@ export function stepSim(state, dt) {
   if (state.spike.state !== 'planted') {
     state.phaseT -= dt;
     if (state.phaseT <= 0) {
-      endRound(state, TEAM.DEF, 'Waktu habis — spike tidak ditanam');
+      endRound(state, TEAM.DEF, 'Time up — spike not planted');
       return;
     }
   }
@@ -572,7 +574,7 @@ export function stepSim(state, dt) {
         });
         if (r.hit) {
           const res = applyDamage(state, r.hit, a.weapon.def.damage, r.part, a, r.dist);
-          if (res === 'kill') onKill(state, a, r.hit);
+          if (res === 'kill') onKill(state, a, r.hit, r.part);
         }
       }
       state.sfx.push('shotFar');

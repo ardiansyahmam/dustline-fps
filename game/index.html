@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DUSTLINE — Tactical FPS</title>
 <style>
   :root {
-    --amber: #ffd27a; --teal: #2fa8a0; --rust: #c25a2e;
+    --amber: #ffd27a; --teal: #2fd8c8; --rust: #c25a2e;
     --ink: #f2ead8; --panel: rgba(16, 14, 10, 0.72); --line: rgba(255, 210, 122, 0.35);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -33,7 +33,7 @@
   /* top bar */
   #topbar { top: 14px; left: 50%; transform: translateX(-50%); text-align: center; }
   #phase-label { font-size: 11px; letter-spacing: 3px; opacity: 0.8; }
-  #timer { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  #timer { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 6px #000; font-variant-numeric: tabular-nums; line-height: 1; }
   #timer.urgent { color: #ff5040; }
   #score-row { font-size: 15px; font-weight: 700; margin-top: 2px; }
   #score-atk { color: var(--teal); } #score-def { color: #ff8a5a; }
@@ -41,20 +41,25 @@
   #alive-atk { color: var(--teal); } #alive-def { color: #ff8a5a; }
   #bomb-status { top: 14px; right: 16px; text-align: right; font-size: 13px; font-weight: 600;
     background: var(--panel); border: 1px solid var(--line); padding: 6px 10px; border-radius: 4px; }
-  #bomb-status.danger { color: #ff5040; border-color: #ff5040; }
-  #money { top: 52px; right: 16px; font-size: 20px; font-weight: 700; color: var(--amber); text-align: right; }
+  #bomb-status.danger { color: #ff5040; border-color: #ff5040; background: rgba(60, 10, 5, 0.9);
+    box-shadow: 0 0 16px rgba(255, 60, 40, 0.8); animation: bombpulse 0.8s infinite alternate; }
+  @keyframes bombpulse { from { box-shadow: 0 0 8px rgba(255, 60, 40, 0.5); } to { box-shadow: 0 0 20px rgba(255, 60, 40, 0.95); } }
+  #money { top: 52px; right: 16px; font-size: 20px; font-weight: 800; color: var(--amber); text-align: right; text-shadow: 0 1px 4px #000; }
   #feed { top: 14px; left: 16px; font-size: 13px; line-height: 1.7; text-shadow: 0 1px 2px #000; }
   #feed div { opacity: 0.92; }
+  #feed .feed-kill { color: #ffd27a; font-weight: 700; }
+  #feed .feed-hs { color: #ff8a2a; font-weight: 800; }
+  #feed .feed-spike { color: #2fd8c8; font-weight: 700; }
   /* bottom */
   #health-box { left: 16px; bottom: 16px; width: 240px; }
   #health-bar-wrap { height: 12px; background: rgba(0,0,0,0.55); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
   #gear { margin-top: 3px; font-size: 11px; opacity: 0.8; letter-spacing: 0.5px; }
   #health-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #37c978, #7be495); }
   #health-bar.low { background: linear-gradient(90deg, #d43a2a, #ff6a4a); }
-  #health-num { font-size: 26px; font-weight: 700; } #armor-num { font-size: 14px; opacity: 0.85; }
+  #health-num { font-size: 26px; font-weight: 800; text-shadow: 0 1px 4px #000; } #armor-num { font-size: 14px; opacity: 0.85; }
   #weapon-box { right: 16px; bottom: 16px; text-align: right; }
   #weapon-name { font-size: 14px; opacity: 0.9; }
-  #ammo { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  #ammo { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 1px 4px #000; font-variant-numeric: tabular-nums; line-height: 1.05; }
   #grenades { font-size: 12px; opacity: 0.85; }
   #banner { left: 50%; top: 30%; transform: translate(-50%, -50%); text-align: center; display: none; }
   #banner.show { display: block; }
@@ -93,9 +98,10 @@
   .buy-art { height: 62px; display: flex; align-items: center; justify-content: center; color: #e6d9b8; margin: 4px 0 2px; }
   .buy-art svg { max-width: 100%; max-height: 62px; }
   .buy-card.cant .buy-art { color: #8a8378; }
-  .buy-price { font-size: 22px; font-weight: 900; color: var(--amber); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .buy-price { font-size: 24px; font-weight: 900; color: #ffc93c; text-shadow: 0 1px 4px #000; font-variant-numeric: tabular-nums; line-height: 1.1; }
   .buy-btn { margin-top: 7px; width: 100%; background: #e86a17; color: #fff; font-weight: 800; font-size: 13px;
-    letter-spacing: 1px; border: none; border-radius: 4px; padding: 7px 0; cursor: pointer; pointer-events: none; }
+    letter-spacing: 1px; border: none; border-radius: 4px; padding: 7px 0; cursor: pointer; pointer-events: none;
+    box-shadow: 0 0 12px rgba(232, 106, 23, 0.55); }
   .buy-btn:hover { background: #f07d2e; }
   .buy-card.cant .buy-btn { background: #5a534a; color: #cfc8bc; }
   .buy-card.owned .buy-btn { background: var(--teal); color: #0c1a16; }
@@ -110,9 +116,10 @@
   .overlay .keys { margin-top: 18px; font-size: 13px; line-height: 2; opacity: 0.85; }
   .overlay .cta { margin-top: 22px; font-size: 18px; font-weight: 700; color: var(--amber);
     border: 1px solid var(--amber); border-radius: 6px; padding: 10px 22px; }
-  /* scoreboard (Tab) */
+  /* scoreboard (Tab) — near-opaque so the round banner can never bleed
+     through it (the banner is also hidden while Tab is held). */
   #scoreboard { left: 50%; top: 50%; transform: translate(-50%, -50%); display: none;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; width: 700px; }
+    background: rgba(14, 11, 8, 0.94); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; width: 700px; }
   #scoreboard.show { display: block; }
   /* Scoreboard header — bahasa visual bar skor referensi: nama tim warna
      tim + angka skor BESAR tebal di sampingnya, timer di tengah dengan
@@ -135,9 +142,9 @@
   #sb-timer { font-size: 30px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
   #sb-round { font-size: 12px; letter-spacing: 1px; opacity: 0.85; margin-top: 3px; white-space: nowrap; }
   #sb-bomb { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--amber); }
-  #sb-bomb.danger { color: #ff5040; }
+  #sb-bomb.danger { color: #ff5040; text-shadow: 0 0 10px rgba(255, 60, 40, 0.8); }
   #sb-pips { margin: 8px 0 2px; font-size: 15px; letter-spacing: 3px; }
-  #sb-pips .pip-atk { color: var(--teal); } #sb-pips .pip-def { color: #ff8a5a; } #sb-pips .pip-todo { color: rgba(255,255,255,0.25); }
+  #sb-pips .pip-atk { color: #2fd8c8; text-shadow: 0 0 6px rgba(47, 216, 200, 0.7); } #sb-pips .pip-def { color: #ff7a2e; text-shadow: 0 0 6px rgba(255, 122, 46, 0.7); } #sb-pips .pip-todo { color: rgba(255,255,255,0.25); }
   #sb-teams { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
   .sb-team h3 { font-size: 13px; letter-spacing: 2px; padding-bottom: 5px; border-bottom: 2px solid; display: flex; justify-content: space-between; }
   .sb-team.atk h3 { color: var(--teal); border-color: var(--teal); }
@@ -154,7 +161,7 @@
   .sb-hp i { display: block; height: 100%; background: #37c978; }
   .sb-hp.low i { background: #ff5040; }
   #sb-foot { margin-top: 10px; font-size: 12px; opacity: 0.8; display: flex; justify-content: space-between; }
-  #sb-mvp { color: var(--amber); font-weight: 700; }
+  #sb-mvp { color: #ffc93c; font-weight: 800; text-shadow: 0 0 8px rgba(255, 201, 60, 0.6); }
   #err { position: fixed; left: 8px; bottom: 8px; z-index: 50; display: none; max-width: 90%;
     background: #7a1008; color: #fff; font: 12px monospace; padding: 8px 10px; border-radius: 4px; }
   #hint { left: 50%; bottom: 8px; transform: translateX(-50%); font-size: 11px; opacity: 0.55; }
@@ -172,8 +179,8 @@
   <div id="score-row"><span id="score-atk">0</span> — <span id="score-def">0</span></div>
   <div><span id="alive-atk">●●●</span> &nbsp; <span id="alive-def">●●●</span></div>
 </div>
-<div id="bomb-status" class="hud">Spike: dibawa</div>
-<div id="money" class="hud">$1.000</div>
+<div id="bomb-status" class="hud">Spike: carried</div>
+<div id="money" class="hud">$1,000</div>
 <div id="feed" class="hud"></div>
 <div id="health-box" class="hud">
   <div><span id="health-num">100</span> HP &nbsp; <span id="armor-num">0</span> Armor</div>
@@ -187,45 +194,45 @@
 </div>
 <div id="banner" class="hud"><div id="banner-title"></div><div id="banner-sub"></div></div>
 <div id="progress" class="hud"><div id="progress-label"></div><div id="progress-wrap"><div id="progress-bar"></div></div></div>
-<div id="buy-hint" class="hud">Tekan <b>B</b> untuk belanja — senjata, vest, granat</div>
+<div id="buy-hint" class="hud">Press <b>B</b> to shop — weapons, vest, grenades</div>
 <div id="buy" class="hud">
-  <div id="buy-head"><h2>TOKO — FASE BELI</h2><div id="buy-money"><small>UANG</small> $1.000</div></div>
+  <div id="buy-head"><h2>SHOP — BUY PHASE</h2><div id="buy-money"><small>MONEY</small> $1,000</div></div>
   <div id="buy-items"></div>
   <div id="buy-msg"></div>
-  <div id="buy-close">Klik kartu atau tekan angka · B / Esc untuk tutup</div>
+  <div id="buy-close">Click a card or press a number · B / Esc to close</div>
 </div>
 <div id="menu" class="overlay show">
   <h1>DUSTLINE</h1>
-  <p>Pembangkit surya terbengkalai di cekungan berdebu. 3 lawan 3, bomb-defusal:
-  tanam spike di Site A atau B, atau habisi semua musuh. Pertama sampai 7 ronde menang; bila 6-6, ronde ke-13 jadi penentu.</p>
-  <div class="keys">WASD gerak · Mouse membidik · Klik tembak · R isi ulang · B belanja<br>
-  E tanam/jinakkan · G granat · 1/2 ganti senjata · Ctrl jongkok · Shift lari cepat · Tab skor</div>
-  <div class="cta">KLIK UNTUK BERMAIN</div>
+  <p>An abandoned solar plant in a dusty basin. 3v3 bomb-defusal:
+  plant the spike at Site A or B, or eliminate the whole enemy team. First to 7 rounds wins; at 6-6, round 13 is the decider.</p>
+  <div class="keys">WASD move · Mouse aim · Click shoot · R reload · B shop<br>
+  E plant/defuse · G grenade · 1/2 switch weapon · Ctrl crouch · Shift sprint · Tab score</div>
+  <div class="cta">CLICK TO PLAY</div>
 </div>
 <div id="match" class="overlay">
-  <h1 id="match-title">KEMENANGAN!</h1>
+  <h1 id="match-title">VICTORY!</h1>
   <p id="match-sub"></p>
-  <div class="cta">KLIK UNTUK MAIN LAGI</div>
+  <div class="cta">CLICK TO PLAY AGAIN</div>
 </div>
 <div id="scoreboard" class="hud">
   <div id="sb-head">
-    <div class="sb-side atk"><span class="sb-team-name">PENYERANG</span><span class="sb-score" id="sb-atk-score">0</span></div>
-    <div class="sb-mid"><div id="sb-timer">1:40</div><div id="sb-round">RONDE 1 · pertama ke 5</div></div>
-    <div class="sb-side def"><span class="sb-score" id="sb-def-score">0</span><span class="sb-team-name">BERTAHAN</span></div>
+    <div class="sb-side atk"><span class="sb-team-name">ATTACKERS</span><span class="sb-score" id="sb-atk-score">0</span></div>
+    <div class="sb-mid"><div id="sb-timer">1:40</div><div id="sb-round">ROUND 1 · first to 7</div></div>
+    <div class="sb-side def"><span class="sb-score" id="sb-def-score">0</span><span class="sb-team-name">DEFENDERS</span></div>
   </div>
-  <div id="sb-bomb">Spike: dibawa</div>
+  <div id="sb-bomb">Spike: carried</div>
   <div id="sb-pips"></div>
   <div id="sb-teams">
-    <div class="sb-team atk"><h3><span>PENYERANG</span></h3>
-      <table><thead><tr><th>Pemain</th><th>K</th><th>D</th><th>DMG</th><th>Senjata</th><th>HP</th></tr></thead>
+    <div class="sb-team atk"><h3><span>ATTACKERS</span></h3>
+      <table><thead><tr><th>Player</th><th>K</th><th>D</th><th>DMG</th><th>Weapon</th><th>HP</th></tr></thead>
       <tbody id="sb-atk-rows"></tbody></table></div>
-    <div class="sb-team def"><h3><span>BERTAHAN</span></h3>
-      <table><thead><tr><th>Pemain</th><th>K</th><th>D</th><th>DMG</th><th>Senjata</th><th>HP</th></tr></thead>
+    <div class="sb-team def"><h3><span>DEFENDERS</span></h3>
+      <table><thead><tr><th>Player</th><th>K</th><th>D</th><th>DMG</th><th>Weapon</th><th>HP</th></tr></thead>
       <tbody id="sb-def-rows"></tbody></table></div>
   </div>
   <div id="sb-foot"><span id="sb-mvp"></span><span id="sb-money"></span></div>
 </div>
-<div id="hint" class="hud">DUSTLINE · 3v3 bomb-defusal · tiga.js</div>
+<div id="hint" class="hud">DUSTLINE · 3v3 bomb-defusal · three.js</div>
 <div id="err"></div>
 <script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
 <script type="module" src="./src/main.js"></script>

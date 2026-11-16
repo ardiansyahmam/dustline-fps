@@ -12,8 +12,13 @@ import { rayVsBox } from './utils.js';
 // Celah desain yang diisi: recoil (baru kualitatif -> angka), waktu reload,
 // penalti gerak, falloff, armor penetration — lihat nilai di bawah.
 export const WEAPONS = {
+  // color / colorDark: vivid per-weapon identity (viewmodel + buy card +
+  // bot gun). Dustline palette, pushed saturated so each gun reads at a
+  // glance: slate-blue pistol, teal SMG, rust-orange rifle, gold magnum,
+  // brick-red shotgun, olive rifle.
   p9: {
     id: 'p9', name: 'P9 Sidearm', kind: 'pistol', price: 0,
+    color: 0x8fa3c8, colorDark: 0x4a5a78,
     damage: 20, head: 36, leg: 14, rpm: 320, mag: 12, reserve: 48,
     reload: 1.6, spread: 0.006, moveSpread: 0.016, airSpread: 0.05,
     recoil: 0.028, auto: false, pellets: 1, range: 55,
@@ -21,6 +26,7 @@ export const WEAPONS = {
   },
   vesper: {
     id: 'vesper', name: 'Vesper-9', kind: 'smg', price: 1750,
+    color: 0x2fd8c8, colorDark: 0x1d7a74,
     damage: 22, head: 38, leg: 16, rpm: 750, mag: 32, reserve: 128,
     reload: 1.9, spread: 0.007, moveSpread: 0.016, airSpread: 0.06,
     recoil: 0.011, auto: true, pellets: 1, range: 60,
@@ -28,6 +34,7 @@ export const WEAPONS = {
   },
   talon: {
     id: 'talon', name: 'Talon-5', kind: 'rifle', price: 2500,
+    color: 0xff7a2e, colorDark: 0xa34a16,
     damage: 27, head: 54, leg: 20, rpm: 600, mag: 30, reserve: 90,
     reload: 2.2, spread: 0.005, moveSpread: 0.011, airSpread: 0.055,
     recoil: 0.016, auto: true, pellets: 1, range: 85,
@@ -35,6 +42,7 @@ export const WEAPONS = {
   },
   cinder: {
     id: 'cinder', name: 'Cinder .50', kind: 'magnum', price: 650,
+    color: 0xffc93c, colorDark: 0xa67c00,
     damage: 48, head: 90, leg: 36, rpm: 240, mag: 6, reserve: 24,
     reload: 2.4, spread: 0.004, moveSpread: 0.022, airSpread: 0.06,
     recoil: 0.07, auto: false, pellets: 1, range: 90,
@@ -42,6 +50,7 @@ export const WEAPONS = {
   },
   brine: {
     id: 'brine', name: 'Brine-12', kind: 'shotgun', price: 1850,
+    color: 0xe8402e, colorDark: 0x8f1f14,
     damage: 6, head: 8, leg: 4, rpm: 78, mag: 8, reserve: 32,
     reload: 2.8, spread: 0.057, moveSpread: 0.01, airSpread: 0.06,
     recoil: 0.06, auto: false, pellets: 8, range: 26,
@@ -49,6 +58,7 @@ export const WEAPONS = {
   },
   rift: {
     id: 'rift', name: 'Rift-47', kind: 'rifle', price: 2850,
+    color: 0x9ab83c, colorDark: 0x55631f,
     damage: 31, head: 62, leg: 23, rpm: 540, mag: 30, reserve: 90,
     reload: 2.4, spread: 0.008, moveSpread: 0.017, airSpread: 0.06,
     recoil: 0.026, auto: true, pellets: 1, range: 85,
@@ -229,9 +239,9 @@ export function finishReload(agent) {
 // Buy phase purchases. Returns a message string ('' on success is 'ok').
 export function buyItem(state, itemId) {
   const p = state.player;
-  if (state.phase !== 'buy' && state.phase !== 'menu') return 'Toko hanya buka saat fase beli.';
+  if (state.phase !== 'buy' && state.phase !== 'menu') return 'Shop is only open during the buy phase.';
   const spend = (cost) => {
-    if (state.money < cost) return 'Uang tidak cukup.';
+    if (state.money < cost) return 'Not enough money.';
     state.money -= cost;
     return 'ok';
   };
@@ -241,13 +251,13 @@ export function buyItem(state, itemId) {
     return r;
   }
   if (itemId === 'helmet') {
-    if (p.helmet) return 'Helm sudah dipakai.';
+    if (p.helmet) return 'Helmet already worn.';
     const r = spend(HELMET_PRICE);
     if (r === 'ok') p.helmet = true;
     return r;
   }
   if (itemId === 'kit') {
-    if (p.kit) return 'Kit sudah dimiliki.';
+    if (p.kit) return 'Kit already owned.';
     const r = spend(KIT_PRICE);
     if (r === 'ok') p.kit = true;
     return r;
@@ -263,8 +273,8 @@ export function buyItem(state, itemId) {
     return r;
   }
   const def = WEAPONS[itemId];
-  if (!def) return 'Item tidak dikenal.';
-  if (p.weapons[0] && p.weapons[0].def.id === itemId) return 'Senjata sudah dimiliki.';
+  if (!def) return 'Unknown item.';
+  if (p.weapons[0] && p.weapons[0].def.id === itemId) return 'Weapon already owned.';
   const r = spend(def.price);
   if (r !== 'ok') return r;
   const w = makeWeapon(itemId);

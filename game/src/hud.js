@@ -5,22 +5,23 @@
 import { WEAPONS, ARMOR_PRICE, HELMET_PRICE, KIT_PRICE, BLINK_PRICE, HAZE_PRICE, buyItem, currentSpread } from './weapons.js';
 import { PHASE, TEAM } from './state.js';
 
-// Buy menu — grid kartu ala toko referensi: nama + peran di atas, siluet
-// senjata di tengah, harga BESAR dengan $, tombol BELI oranye. Uang di
-// atas menu; item tak terjangkau redup + tombol nonaktif; senjata yang
-// dipakai berbadge DIPAKAI. Tombol 1-5 senjata + 6-9,0 sisanya tetap
-// jalan sebagai jalan pintas keyboard (fase beli cuma 12 dtk).
+// Buy menu — card grid like the reference shop: name + role on top, weapon
+// silhouette in the middle, BIG price with $, orange BUY button. Money on
+// top; unaffordable items dimmed + button disabled; equipped weapon gets
+// an EQUIPPED badge. Keys 1-5 weapons + 6-9,0 the rest still work as
+// keyboard shortcuts (buy phase is only 12 s). Each card carries its
+// weapon's vivid color as the art + top accent.
 const BUY_ITEMS = [
-  { id: 'vesper', name: 'Vesper-9', desc: 'SMG — entry dekat', price: WEAPONS.vesper.price, key: '1', art: 'smg' },
-  { id: 'talon', name: 'Talon-5', desc: 'Rifle — serba bisa', price: WEAPONS.talon.price, key: '2', art: 'rifle' },
-  { id: 'cinder', name: 'Cinder .50', desc: 'Magnum — 1 tembakan sakit', price: WEAPONS.cinder.price, key: '3', art: 'magnum' },
-  { id: 'brine', name: 'Brine-12', desc: 'Shotgun — rapat mematikan', price: WEAPONS.brine.price, key: '4', art: 'shotgun' },
-  { id: 'rift', name: 'Rift-47', desc: 'Rifle — damage berat', price: WEAPONS.rift.price, key: '5', art: 'rifle2' },
-  { id: 'armor', name: 'Vest Anti-Peluru', desc: 'Armor +50', price: ARMOR_PRICE, key: '6', art: 'vest' },
-  { id: 'helmet', name: 'Helmet', desc: 'Headshot −35%', price: HELMET_PRICE, key: '7', art: 'helmet' },
-  { id: 'kit', name: 'Defuse Kit', desc: 'Jinakkan 4 dtk', price: KIT_PRICE, key: '8', art: 'kit' },
-  { id: 'blink', name: 'Blink Flash', desc: 'Granat kilat — butakan', price: BLINK_PRICE, key: '9', art: 'blink' },
-  { id: 'haze', name: 'Haze Smoke', desc: 'Granat asap — radius 5 m', price: HAZE_PRICE, key: '0', art: 'haze' },
+  { id: 'vesper', name: 'Vesper-9', desc: 'SMG — close entry', price: WEAPONS.vesper.price, key: '1', art: 'smg', color: '#2fd8c8' },
+  { id: 'talon', name: 'Talon-5', desc: 'Rifle — all-rounder', price: WEAPONS.talon.price, key: '2', art: 'rifle', color: '#ff7a2e' },
+  { id: 'cinder', name: 'Cinder .50', desc: 'Magnum — one hard hit', price: WEAPONS.cinder.price, key: '3', art: 'magnum', color: '#ffc93c' },
+  { id: 'brine', name: 'Brine-12', desc: 'Shotgun — deadly up close', price: WEAPONS.brine.price, key: '4', art: 'shotgun', color: '#e8402e' },
+  { id: 'rift', name: 'Rift-47', desc: 'Rifle — heavy damage', price: WEAPONS.rift.price, key: '5', art: 'rifle2', color: '#9ab83c' },
+  { id: 'armor', name: 'Bulletproof Vest', desc: 'Armor +50', price: ARMOR_PRICE, key: '6', art: 'vest', color: '#2fa8a0' },
+  { id: 'helmet', name: 'Helmet', desc: 'Headshot −35%', price: HELMET_PRICE, key: '7', art: 'helmet', color: '#c9a86a' },
+  { id: 'kit', name: 'Defuse Kit', desc: 'Defuse in 4s', price: KIT_PRICE, key: '8', art: 'kit', color: '#37c978' },
+  { id: 'blink', name: 'Blink Flash', desc: 'Flash grenade — blinds', price: BLINK_PRICE, key: '9', art: 'blink', color: '#ffd27a' },
+  { id: 'haze', name: 'Haze Smoke', desc: 'Smoke grenade — 5 m radius', price: HAZE_PRICE, key: '0', art: 'haze', color: '#cfc4b0' },
 ];
 
 // Siluet item digambar sebagai SVG sebaris (tanpa file eksternal).
@@ -38,7 +39,7 @@ function buyArt(kind) {
   return `<svg viewBox="0 0 48 48" width="48" height="48"><g ${F}><ellipse cx="16" cy="30" rx="11" ry="9"/><ellipse cx="26" cy="24" rx="12" ry="11"/><ellipse cx="35" cy="31" rx="9" ry="8"/></g></svg>`;
 }
 
-const fmtMoney = (n) => '$' + n.toLocaleString('id-ID');
+const fmtMoney = (n) => '$' + n.toLocaleString('en-US');
 
 function el(id) { return document.getElementById(id); }
 function setText(node, text) { if (node && node._t !== text) { node._t = text; node.textContent = text; } }
@@ -58,15 +59,16 @@ export function createHud(state) {
     card.className = 'buy-card';
     card.dataset.id = item.id;
     card.innerHTML = `<span class="buy-key">${item.key}</span>
-      <span class="buy-badge">DIPAKAI</span>
+      <span class="buy-badge">EQUIPPED</span>
       <div class="buy-name">${item.name}</div>
       <div class="buy-desc">${item.desc}</div>
-      <div class="buy-art">${buyArt(item.art)}</div>
+      <div class="buy-art" style="color:${item.color}">${buyArt(item.art)}</div>
       <div class="buy-price">${fmtMoney(item.price)}</div>
-      <button class="buy-btn" tabindex="-1">BELI</button>`;
+      <button class="buy-btn" tabindex="-1">BUY</button>`;
+    card.style.borderTop = `3px solid ${item.color}`;
     card.addEventListener('click', () => {
       const msg = buyItem(state, item.id);
-      setText(el('buy-msg'), msg === 'ok' ? `${item.name} dibeli.` : msg);
+      setText(el('buy-msg'), msg === 'ok' ? `${item.name} bought.` : msg);
       refreshBuy(state);
     });
     itemsEl.appendChild(card);
@@ -77,7 +79,7 @@ export function createHud(state) {
     const item = BUY_ITEMS.find((b) => b.key === e.code.replace('Digit', ''));
     if (!item) return;
     const msg = buyItem(state, item.id);
-    setText(el('buy-msg'), msg === 'ok' ? `${item.name} dibeli.` : msg);
+    setText(el('buy-msg'), msg === 'ok' ? `${item.name} bought.` : msg);
     refreshBuy(state);
   });
 
@@ -96,9 +98,9 @@ export function createHud(state) {
       card.classList.toggle('cant', cant);
       card.classList.toggle('owned', owned);
       const btn = card.querySelector('.buy-btn');
-      btn.textContent = owned ? 'DIPAKAI' : maxed ? 'PENUH' : cant ? 'UANG KURANG' : 'BELI';
+      btn.textContent = owned ? 'EQUIPPED' : maxed ? 'FULL' : cant ? 'NOT ENOUGH MONEY' : 'BUY';
     });
-    el('buy-money').innerHTML = `<small>UANG</small> ${fmtMoney(s.money)}`;
+    el('buy-money').innerHTML = `<small>MONEY</small> ${fmtMoney(s.money)}`;
   }
   hud.refreshBuy = refreshBuy;
 
@@ -125,7 +127,7 @@ export function updateHud(hud, state) {
   const mm = Math.floor(t / 60), ss = String(t % 60).padStart(2, '0');
   setText(el('timer'), state.phase === PHASE.LIVE || state.phase === PHASE.BUY ? `${mm}:${ss}` : '—');
   el('timer').classList.toggle('urgent', state.phase === PHASE.LIVE && t <= 10);
-  setText(el('phase-label'), { menu: 'MENU', buy: 'FASE BELI', live: 'RONDE ' + state.round, end: 'RONDE SELESAI', match: 'SELESAI' }[state.phase]);
+  setText(el('phase-label'), { menu: 'MENU', buy: 'BUY PHASE', live: 'ROUND ' + state.round, end: 'ROUND OVER', match: 'MATCH OVER' }[state.phase]);
 
   // Score + alive.
   setText(el('score-atk'), String(state.score[TEAM.ATK]));
@@ -149,7 +151,7 @@ export function updateHud(hud, state) {
   // Gear (vest/helmet/kit) + flashbang overlay (layar memutih saat buta).
   const gear = [];
   if (p.armor > 0) gear.push('Vest ' + Math.ceil(p.armor));
-  if (p.helmet) gear.push('Helm');
+  if (p.helmet) gear.push('Helmet');
   if (p.kit) gear.push('Kit');
   setText(el('gear'), gear.join(' · '));
   const blindLeft = Math.max(0, p.blindUntil - state.time);
@@ -168,13 +170,13 @@ export function updateHud(hud, state) {
 
   // Bomb status.
   const sp = state.spike;
-  let bombText = 'Spike: dibawa';
-  if (sp.state === 'planted') bombText = `SPIKE DITANAM — ${Math.ceil(sp.timer)} dtk`;
-  else if (sp.state === 'planting') bombText = 'Menanam spike…';
-  else if (sp.state === 'defusing') bombText = 'Musuh menjinakkan spike!';
-  else if (sp.state === 'dropped') bombText = 'Spike terjatuh — ambil!';
-  else if (sp.state === 'exploded') bombText = 'Spike meledak';
-  else if (sp.state === 'defused') bombText = 'Spike dijinakkan';
+  let bombText = 'Spike: carried';
+  if (sp.state === 'planted') bombText = `SPIKE PLANTED — ${Math.ceil(sp.timer)}s`;
+  else if (sp.state === 'planting') bombText = 'Planting spike…';
+  else if (sp.state === 'defusing') bombText = 'Enemy defusing the spike!';
+  else if (sp.state === 'dropped') bombText = 'Spike dropped — pick it up!';
+  else if (sp.state === 'exploded') bombText = 'Spike detonated';
+  else if (sp.state === 'defused') bombText = 'Spike defused';
   setText(el('bomb-status'), bombText);
   el('bomb-status').classList.toggle('danger', sp.state === 'planted');
 
@@ -182,22 +184,27 @@ export function updateHud(hud, state) {
   const prog = el('progress');
   if (sp.state === 'planting' || sp.state === 'defusing') {
     prog.style.display = 'block';
-    setText(el('progress-label'), sp.state === 'planting' ? 'MENANAM SPIKE…' : 'SPIKE DIJINAKKAN MUSUH…');
+    setText(el('progress-label'), sp.state === 'planting' ? 'PLANTING SPIKE…' : 'ENEMY DEFUSING SPIKE…');
     el('progress-bar').style.width = `${Math.round(sp.progress * 100)}%`;
   } else {
     prog.style.display = 'none';
   }
 
-  // Kill feed.
+  // Kill feed — colored by content: kill = gold, headshot = orange,
+  // spike events = teal (see .feed-kill / .feed-hs / .feed-spike).
   const feedStr = state.feed.join('\n');
   if (feedStr !== hud.lastFeed) {
     hud.lastFeed = feedStr;
-    el('feed').innerHTML = state.feed.map((f) => `<div>${f}</div>`).join('');
+    el('feed').innerHTML = state.feed.map((f) => {
+      const cls = f.includes('HEADSHOT') ? 'feed-hs' : f.includes('▸') ? 'feed-kill' : f.includes('Spike') ? 'feed-spike' : '';
+      return `<div class="${cls}">${f}</div>`;
+    }).join('');
   }
 
-  // Banner.
+  // Banner — hidden while the scoreboard is held, so the big round
+  // banner never bleeds through the scoreboard panel.
   const banner = el('banner');
-  banner.classList.toggle('show', state.bannerT > 0);
+  banner.classList.toggle('show', state.bannerT > 0 && !input.score);
   if (state.bannerT > 0) {
     setText(el('banner-title'), state.banner);
     setText(el('banner-sub'), state.bannerSub);
@@ -210,8 +217,8 @@ export function updateHud(hud, state) {
   el('menu').classList.toggle('show', state.phase === PHASE.MENU);
   el('match').classList.toggle('show', state.phase === PHASE.MATCH);
   if (state.phase === PHASE.MATCH) {
-    setText(el('match-title'), state.matchWinner === TEAM.ATK ? 'KEMENANGAN!' : 'KEKALAHAN');
-    setText(el('match-sub'), `Skor akhir ${state.score[0]} — ${state.score[1]} · Klik untuk main lagi`);
+    setText(el('match-title'), state.matchWinner === TEAM.ATK ? 'VICTORY!' : 'DEFEAT');
+    setText(el('match-sub'), `Final score ${state.score[0]} — ${state.score[1]} · Click to play again`);
   }
 
   // Scoreboard (Tab): two team panels, per-player K/D/damage, round pips,
@@ -229,18 +236,18 @@ export function updateHud(hud, state) {
       hud.lastScoreSig = sig;
       const t = Math.max(0, Math.ceil(state.phaseT));
       const mm = Math.floor(t / 60), ss = String(t % 60).padStart(2, '0');
-      // Header ala bar skor referensi: skor besar di samping nama tim,
-      // timer di tengah, info ronde di bawah timer. TIDAK ADA overtime:
-      // bila 6-6, ronde ke-13 langsung jadi PENENTU (first-to-7).
+      // Header like the reference score bar: big scores beside the team
+      // names, timer in the middle, round info under the timer. NO
+      // overtime: at 6-6, round 13 is the DECIDER (first-to-7).
       const isDecider = state.round >= 13;
       setText(el('sb-timer'), state.phase === PHASE.LIVE || state.phase === PHASE.BUY ? mm + ':' + ss : '—');
-      setText(el('sb-round'), isDecider ? 'RONDE 13 · PENENTU'
-        : `RONDE ${state.round} · pertama ke 7`);
+      setText(el('sb-round'), isDecider ? 'ROUND 13 · DECIDER'
+        : `ROUND ${state.round} · first to 7`);
       const sp = state.spike;
-      const bombTxt = sp.state === 'planted' ? `SPIKE DITANAM di Site ${sp.site} — meledak ${Math.ceil(sp.timer)} dtk`
-        : sp.state === 'planting' ? 'Menanam spike…' : sp.state === 'defusing' ? 'Musuh menjinakkan spike!'
-        : sp.state === 'dropped' ? 'Spike terjatuh — ambil!' : sp.state === 'exploded' ? 'Spike meledak'
-        : sp.state === 'defused' ? 'Spike dijinakkan' : `Spike: dibawa${sp.carrier ? ' oleh ' + sp.carrier.name : ''}`;
+      const bombTxt = sp.state === 'planted' ? `SPIKE PLANTED at Site ${sp.site} — detonates in ${Math.ceil(sp.timer)}s`
+        : sp.state === 'planting' ? 'Planting spike…' : sp.state === 'defusing' ? 'Enemy defusing the spike!'
+        : sp.state === 'dropped' ? 'Spike dropped — pick it up!' : sp.state === 'exploded' ? 'Spike detonated'
+        : sp.state === 'defused' ? 'Spike defused' : `Spike: carried${sp.carrier ? ' by ' + sp.carrier.name : ''}`;
       setText(el('sb-bomb'), bombTxt);
       el('sb-bomb').classList.toggle('danger', sp.state === 'planted');
       let pips = '';
@@ -249,25 +256,25 @@ export function updateHud(hud, state) {
         pips += w === TEAM.ATK ? '<span class="pip-atk">●</span>'
           : w === TEAM.DEF ? '<span class="pip-def">●</span>' : '<span class="pip-todo">○</span>';
       }
-      el('sb-pips').innerHTML = pips + ` <span style="opacity:.6;font-size:12px">riwayat ronde (pertama ke 7)</span>`;
+      el('sb-pips').innerHTML = pips + ` <span style="opacity:.6;font-size:12px">round history (first to 7)</span>`;
       setText(el('sb-atk-score'), String(state.score[TEAM.ATK]));
       setText(el('sb-def-score'), String(state.score[TEAM.DEF]));
       const rowHtml = (a) => {
         const hp = a.alive ? `<span class="sb-hp${a.hp <= 30 ? ' low' : ''}"><i style="width:${Math.max(0, a.hp)}%"></i></span> ${Math.ceil(a.hp)}`
-          : '<span style="opacity:.6">TEWAS</span>';
+          : '<span style="opacity:.6">DEAD</span>';
         const cls = `${a === mvp && (a.kills > 0 || a.dmg > 0) ? 'mvp' : ''}${!a.alive ? ' dead' : ''}${a.isPlayer ? ' me' : ''}`;
         const star = a === mvp && (a.kills > 0 || a.dmg > 0) ? ' ★' : '';
         return `<tr class="${cls}"><td>${a.name}${star}</td><td>${a.kills}</td><td>${a.deaths}</td><td>${a.dmg}</td><td>${a.weapon ? a.weapon.def.name : '—'}</td><td>${hp}</td></tr>`;
       };
       el('sb-atk-rows').innerHTML = state.agents.filter((a) => a.team === TEAM.ATK).map(rowHtml).join('');
       el('sb-def-rows').innerHTML = state.agents.filter((a) => a.team === TEAM.DEF).map(rowHtml).join('');
-      setText(el('sb-mvp'), mvp && (mvp.kills > 0 || mvp.dmg > 0) ? `★ MVP: ${mvp.name} — ${mvp.kills} kill, ${mvp.dmg} damage` : '');
-      setText(el('sb-money'), `Uang tim: $${state.money} · Tahan Tab untuk melihat · Lepas untuk menutup`);
+      setText(el('sb-mvp'), mvp && (mvp.kills > 0 || mvp.dmg > 0) ? `★ MVP: ${mvp.name} — ${mvp.kills} kills, ${mvp.dmg} damage` : '');
+      setText(el('sb-money'), `Team money: ${fmtMoney(state.money)} · Hold Tab to view · Release to close`);
     }
   } else {
     hud.lastScoreSig = '';
   }
 
   // Buy menu money line.
-  if (hud.buyOpen) el('buy-money').innerHTML = `<small>UANG</small> ${fmtMoney(state.money)}`;
+  if (hud.buyOpen) el('buy-money').innerHTML = `<small>MONEY</small> ${fmtMoney(state.money)}`;
 }

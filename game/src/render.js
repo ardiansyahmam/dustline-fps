@@ -32,12 +32,26 @@ export function createRenderer(canvas) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xd9a05e);
+  // Rich warm sunset gradient sky (canvas texture, no external file):
+  // burnt orange up top, golden haze at the horizon — the dust-basin
+  // identity, pushed bolder so the first screenshot pops.
+  const skyC = document.createElement('canvas');
+  skyC.width = 16; skyC.height = 512;
+  const sk = skyC.getContext('2d');
+  const skyGrad = sk.createLinearGradient(0, 0, 0, 512);
+  skyGrad.addColorStop(0, '#a34d12');
+  skyGrad.addColorStop(0.45, '#e07f2a');
+  skyGrad.addColorStop(0.75, '#f7b95e');
+  skyGrad.addColorStop(1, '#ffd27a');
+  sk.fillStyle = skyGrad; sk.fillRect(0, 0, 16, 512);
+  const skyTex = new THREE.CanvasTexture(skyC);
+  skyTex.colorSpace = THREE.SRGBColorSpace;
+  scene.background = skyTex;
   scene.fog = new THREE.FogExp2(0xc98d4e, 0.0135);
 
-  const hemi = new THREE.HemisphereLight(0xffd9a0, 0x8a6a44, 0.85);
+  const hemi = new THREE.HemisphereLight(0xffe0b0, 0x8a6a44, 0.9);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffe2b0, 1.9);
+  const sun = new THREE.DirectionalLight(0xffd9a0, 2.2);
   sun.position.set(28, 42, -18);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -126,9 +140,11 @@ export function createGlbFigure(THREE, model, team, name) {
   const modelGroup = clone.group;
   modelGroup.scale.setScalar(s);
   body.add(modelGroup);
-  // Held gun (box, like the old figure) + team accent stripe.
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.55, metalness: 0.55 });
-  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.13, 0.72), darkMat);
+  // Held gun (box, like the old figure) + team accent stripe. The gun is
+  // tinted to the bot's current weapon color (see syncWorld); the stripe
+  // stays the team color.
+  const gunMat = new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.55, metalness: 0.55 });
+  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.13, 0.72), gunMat);
   gun.position.set(0.24, 1.22, 0.32); gun.castShadow = true;
   const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.03, 0.4),
     new THREE.MeshStandardMaterial({ color: TEAM_COLOR[team], roughness: 0.5, metalness: 0.3 }));
@@ -143,8 +159,8 @@ export function createGlbFigure(THREE, model, team, name) {
   // Name tag + team ring (stay upright, on the outer group).
   const tag = makeNametag(THREE, name, team);
   outer.add(tag);
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.58, 32),
-    new THREE.MeshBasicMaterial({ color: TEAM_COLOR[team], transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false }));
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.62, 32),
+    new THREE.MeshBasicMaterial({ color: TEAM_COLOR[team], transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.02;
   outer.add(ring);
@@ -162,27 +178,36 @@ export function createGlbFigure(THREE, model, team, name) {
   const mats = [];
   modelGroup.traverse((o) => { if (o.isSkinnedMesh) mats.push(o.material); });
   outer.userData = {
-    kind: 'glb', mixer, actions, curAction: 'idle', body, mats,
+    kind: 'glb', mixer, actions, curAction: 'idle', body, mats, gunMat,
     flash, flashMat, tag, ring, flinchT: 0, prevFlash: 0,
   };
   return outer;
 }
 
 // ---- viewmodel: the player's own gun, boxes on the camera ----
+// Colored per weapon (see weapons.js def.color / colorDark): the receiver
+// takes the weapon's vivid color, barrel + magazine its dark shade, grip
+// stays dark, sight picks up the bright color. No more all-black gun.
 function createViewmodel(THREE, camera) {
-  const dark = new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.55, metalness: 0.55 });
-  const mid = new THREE.MeshStandardMaterial({ color: 0x4a4d52, roughness: 0.5, metalness: 0.6 });
+  const receiverMat = new THREE.MeshStandardMaterial({ color: 0x8fa3c8, roughness: 0.5, metalness: 0.55 });
+  const barrelMat = new THREE.MeshStandardMaterial({ color: 0x4a5a78, roughness: 0.5, metalness: 0.6 });
+  const gripMat = new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.55, metalness: 0.55 });
+  const sightMat = new THREE.MeshStandardMaterial({ color: 0x8fa3c8, roughness: 0.4, metalness: 0.6 });
   const g = new THREE.Group();
-  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.13, 0.5), dark);
-  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.34), mid);
+  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.13, 0.5), receiverMat);
+  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.34), barrelMat);
   barrel.position.set(0, 0.02, -0.4);
-  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.2, 0.1), dark);
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.2, 0.1), barrelMat);
   mag.position.set(0, -0.14, -0.02); mag.rotation.x = 0.25;
-  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, 0.12), mid);
+  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, 0.12), sightMat);
   sight.position.set(0, 0.1, -0.08);
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.09), dark);
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.09), gripMat);
   grip.position.set(0, -0.12, 0.16); grip.rotation.x = 0.3;
-  g.add(receiver, barrel, mag, sight, grip);
+  // Bright accent stripe along the receiver so the color reads at a glance.
+  const stripeMat = new THREE.MeshStandardMaterial({ color: 0xffc93c, roughness: 0.4, metalness: 0.4, emissive: 0x664400, emissiveIntensity: 0.7 });
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.02, 0.3), stripeMat);
+  stripe.position.set(0, 0.075, -0.05);
+  g.add(receiver, barrel, mag, sight, grip, stripe);
   // Muzzle flash: additive quad + light at the barrel tip
   const flashMat = new THREE.MeshBasicMaterial({ color: 0xffc860, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
   const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.34), flashMat);
@@ -192,7 +217,18 @@ function createViewmodel(THREE, camera) {
   g.add(flash, flashLight);
   g.position.set(0.27, -0.25, -0.55);
   camera.add(g);
-  return { group: g, flashMat, flashLight, kick: 0, swayX: 0, swayY: 0 };
+  return { group: g, flashMat, flashLight, kick: 0, swayX: 0, swayY: 0, receiverMat, barrelMat, sightMat, stripeMat, weaponId: '' };
+}
+
+// Recolor the viewmodel to the current weapon (called from syncWorld when
+// the player's weapon changes). Receiver = vivid color, barrel/mag = dark
+// shade, sight = vivid color, stripe = gold accent.
+export function setViewmodelWeapon(vm, def) {
+  if (!def || vm.weaponId === def.id) return;
+  vm.weaponId = def.id;
+  vm.receiverMat.color.setHex(def.color);
+  vm.barrelMat.color.setHex(def.colorDark);
+  vm.sightMat.color.setHex(def.color);
 }
 
 // ---- world assembly ----
@@ -281,7 +317,7 @@ export function addTracer(world, x0, y0, z0, x1, y1, z1) {
   world.tracerNext = (world.tracerNext + 1) % 8;
   const p = world.tracerPos, c = world.tracerCol, o = i * 6;
   p[o] = x0; p[o + 1] = y0; p[o + 2] = z0; p[o + 3] = x1; p[o + 4] = y1; p[o + 5] = z1;
-  c[o] = 1; c[o + 1] = 0.8; c[o + 2] = 0.45; c[o + 3] = 1; c[o + 4] = 0.8; c[o + 5] = 0.45;
+  c[o] = 1; c[o + 1] = 0.62; c[o + 2] = 0.2; c[o + 3] = 1; c[o + 4] = 0.62; c[o + 5] = 0.2;
   world.tracerLife[i] = 0.09;
   world.tracerGeo.attributes.position.needsUpdate = true;
   world.tracerGeo.attributes.color.needsUpdate = true;
@@ -314,6 +350,8 @@ export function syncWorld(world, THREE, state, dt) {
   // --- viewmodel sway / kick / flash (hidden while spectating) ---
   const vm = world.viewmodel;
   vm.group.visible = !isSpectating;
+  // Recolor the viewmodel to the player's current weapon.
+  if (state.player.weapon) setViewmodelWeapon(vm, state.player.weapon.def);
   const yawVel = (p.yaw - world.prevYaw) / Math.max(dt, 1e-4);
   world.prevYaw = p.yaw;
   vm.swayX += ((-yawVel * 0.012) - vm.swayX) * Math.min(1, dt * 10);
@@ -354,6 +392,8 @@ export function syncWorld(world, THREE, state, dt) {
       if (u.kind === 'glb') {
         u.tag.visible = true;
         u.ring.visible = true;
+        // Held gun in the bot's weapon color.
+        if (a.weapon) u.gunMat.color.setHex(a.weapon.def.color);
         // Animation: idle / walk / run by speed, weights lerped.
         const moving = Math.hypot(a.vx, a.vz);
         const want = moving > 3.2 ? 'run' : moving > 0.5 ? 'walk' : 'idle';

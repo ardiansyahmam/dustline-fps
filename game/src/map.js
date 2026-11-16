@@ -295,31 +295,39 @@ export function buildMap(THREE, scene, textures, rng) {
     scene.add(boxMesh(THREE, darkMat, 18.2, -17.4 - r * 4, 22, -17.1 - r * 4, 0.7));
   }
 
-  // Mid crates: instanced, sized to their colliders
+  // Mid crates: instanced, sized to their colliders. Each crate gets its
+  // own accent tint (rust / teal / gold / plain) so the mid is not one
+  // flat brown — instance colors multiply the crate texture.
   const crateGeo = new THREE.BoxGeometry(1, 1, 1);
   const crates = new THREE.InstancedMesh(crateGeo, crateMat, 4);
   const crateBoxes = COLLIDERS.slice(12, 16);
+  const crateTints = [0xc25a2e, 0x2fa8a0, 0xd9a83c, 0x9a7a52];
   crateBoxes.forEach((b, i) => {
     dummy.position.set((b.x0 + b.x1) / 2, b.y1 / 2, (b.z0 + b.z1) / 2);
     dummy.rotation.set(0, (i % 2) * 0.35, 0);
     dummy.scale.set(b.x1 - b.x0, b.y1, b.z1 - b.z0);
     dummy.updateMatrix();
     crates.setMatrixAt(i, dummy.matrix);
+    crates.setColorAt(i, new THREE.Color(crateTints[i]));
   });
   crates.castShadow = true; crates.receiveShadow = true;
+  if (crates.instanceColor) crates.instanceColor.needsUpdate = true;
   scene.add(crates);
 
   // South lane low walls + pillars + gantry (instanced pillars)
   for (const b of COLLIDERS.slice(16, 18)) scene.add(boxMesh(THREE, concrete, b.x0, b.z0, b.x1, b.z1, b.y1));
   const pillarGeo = new THREE.BoxGeometry(1, 4, 1);
   const pillars = new THREE.InstancedMesh(pillarGeo, concrete, 4);
+  const pillarTints = [0xffffff, 0xffb08a, 0xffffff, 0x7ad9ff];
   COLLIDERS.slice(18, 22).forEach((b, i) => {
     dummy.position.set((b.x0 + b.x1) / 2, 2, (b.z0 + b.z1) / 2);
     dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     pillars.setMatrixAt(i, dummy.matrix);
+    pillars.setColorAt(i, new THREE.Color(pillarTints[i]));
   });
   pillars.castShadow = true; pillars.receiveShadow = true;
+  if (pillars.instanceColor) pillars.instanceColor.needsUpdate = true;
   scene.add(pillars);
   for (const b of COLLIDERS.slice(22, 24)) scene.add(boxMesh(THREE, rust, b.x0, b.z0, b.x1, b.z1, b.y1));
   const beam = boxMesh(THREE, rust, -7.5, 3.5, 7.5, 4.5, 5.4, 5);
@@ -348,12 +356,15 @@ export function buildMap(THREE, scene, textures, rng) {
     scene.add(dune);
   }
 
-  // Site markers: floating A / B
-  const markA = letterSprite(THREE, 'A', '#ffd27a');
+  // Site markers: floating A / B — A in vivid teal, B in vivid orange,
+  // big and high-contrast so each site reads instantly from spawn.
+  const markA = letterSprite(THREE, 'A', '#2fd8c8');
   markA.position.set(25, 6.5, -10);
+  markA.scale.set(3.4, 3.4, 1);
   scene.add(markA);
-  const markB = letterSprite(THREE, 'B', '#7ad9ff');
+  const markB = letterSprite(THREE, 'B', '#ff8a3c');
   markB.position.set(-25, 6.5, -10);
+  markB.scale.set(3.4, 3.4, 1);
   scene.add(markB);
 
   return { colliders: COLLIDERS, waypoints: WAYPOINTS, sites: MAP.sites, spawns: MAP.spawns, zones: ZONES };
