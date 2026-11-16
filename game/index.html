@@ -30,15 +30,36 @@
   #hitmarker.kill i { background: #ff4030; }
   #vignette { inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200, 20, 10, 0.55) 100%); opacity: 0; z-index: 4; }
   #flashbang { inset: 0; background: #fff; opacity: 0; z-index: 5; pointer-events: none; }
-  /* top bar */
-  #topbar { top: 14px; left: 50%; transform: translateX(-50%); text-align: center; }
-  #phase-label { font-size: 11px; letter-spacing: 3px; opacity: 0.8; }
+  /* top bar — live score bar like the reference: team name + BIG score
+     on each side, big timer in the middle with round info under it, and
+     a thin 13-round pips row under the bar. Scores dominate; team colors
+     stay DUSTLINE teal vs orange (no overtime: "ROUND 1 · first to 7" /
+     "ROUND 13 · DECIDER" under the timer, never "OT"). */
+  #topbar { top: 12px; left: 50%; transform: translateX(-50%); text-align: center;
+    background: rgba(12, 9, 6, 0.55); border: 1px solid rgba(255, 210, 122, 0.25);
+    border-radius: 6px; padding: 6px 16px 5px; }
+  #tb-row { display: flex; align-items: center; gap: 18px; }
+  .tb-side { display: flex; align-items: center; gap: 10px; }
+  .tb-namecol { display: flex; flex-direction: column; gap: 1px; }
+  .tb-side.atk .tb-namecol { align-items: flex-start; text-align: left; }
+  .tb-side.def .tb-namecol { align-items: flex-end; text-align: right; }
+  .tb-team-name { font-size: 16px; font-weight: 800; letter-spacing: 1px; white-space: nowrap; }
+  .tb-side.atk .tb-team-name { color: var(--teal); }
+  .tb-side.def .tb-team-name { color: #ff7a2e; }
+  .tb-score { font-size: 54px; font-weight: 900; line-height: 0.9; font-variant-numeric: tabular-nums;
+    text-shadow: 0 2px 0 rgba(0,0,0,0.5), 0 0 14px rgba(0,0,0,0.35); }
+  .tb-side.atk .tb-score { color: var(--teal); }
+  .tb-side.def .tb-score { color: #ff7a2e; }
+  #alive-atk, #alive-def { font-size: 10px; letter-spacing: 2px; line-height: 1; }
+  #alive-atk { color: var(--teal); } #alive-def { color: #ff7a2e; }
+  .tb-mid { text-align: center; min-width: 96px; }
   #timer { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 6px #000; font-variant-numeric: tabular-nums; line-height: 1; }
   #timer.urgent { color: #ff5040; }
-  #score-row { font-size: 15px; font-weight: 700; margin-top: 2px; }
-  #score-atk { color: var(--teal); } #score-def { color: #ff8a5a; }
-  #alive-atk, #alive-def { font-size: 12px; letter-spacing: 2px; }
-  #alive-atk { color: var(--teal); } #alive-def { color: #ff8a5a; }
+  #phase-label { font-size: 11px; letter-spacing: 1.5px; opacity: 0.85; margin-top: 3px; white-space: nowrap; }
+  #top-pips { margin-top: 3px; font-size: 11px; letter-spacing: 2px; line-height: 1; }
+  #top-pips .pip-atk { color: #2fd8c8; text-shadow: 0 0 6px rgba(47, 216, 200, 0.7); }
+  #top-pips .pip-def { color: #ff7a2e; text-shadow: 0 0 6px rgba(255, 122, 46, 0.7); }
+  #top-pips .pip-todo { color: rgba(255,255,255,0.25); }
   #bomb-status { top: 14px; right: 16px; text-align: right; font-size: 13px; font-weight: 600;
     background: var(--panel); border: 1px solid var(--line); padding: 6px 10px; border-radius: 4px; }
   #bomb-status.danger { color: #ff5040; border-color: #ff5040; background: rgba(60, 10, 5, 0.9);
@@ -174,10 +195,21 @@
 <div id="crosshair" class="hud"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i></div>
 <div id="hitmarker" class="hud"><i></i><i></i></div>
 <div id="topbar" class="hud">
-  <div id="phase-label">MENU</div>
-  <div id="timer">—</div>
-  <div id="score-row"><span id="score-atk">0</span> — <span id="score-def">0</span></div>
-  <div><span id="alive-atk">●●●</span> &nbsp; <span id="alive-def">●●●</span></div>
+  <div id="tb-row">
+    <div class="tb-side atk">
+      <div class="tb-namecol"><span class="tb-team-name">ATTACKERS</span><span id="alive-atk">●●●</span></div>
+      <span class="tb-score" id="score-atk">0</span>
+    </div>
+    <div class="tb-mid">
+      <div id="timer">—</div>
+      <div id="phase-label">MENU</div>
+    </div>
+    <div class="tb-side def">
+      <span class="tb-score" id="score-def">0</span>
+      <div class="tb-namecol"><span class="tb-team-name">DEFENDERS</span><span id="alive-def">●●●</span></div>
+    </div>
+  </div>
+  <div id="top-pips"></div>
 </div>
 <div id="bomb-status" class="hud">Spike: carried</div>
 <div id="money" class="hud">$1,000</div>

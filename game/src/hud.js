@@ -127,7 +127,13 @@ export function updateHud(hud, state) {
   const mm = Math.floor(t / 60), ss = String(t % 60).padStart(2, '0');
   setText(el('timer'), state.phase === PHASE.LIVE || state.phase === PHASE.BUY ? `${mm}:${ss}` : '—');
   el('timer').classList.toggle('urgent', state.phase === PHASE.LIVE && t <= 10);
-  setText(el('phase-label'), { menu: 'MENU', buy: 'BUY PHASE', live: 'ROUND ' + state.round, end: 'ROUND OVER', match: 'MATCH OVER' }[state.phase]);
+  // Live bar round info under the timer — same rule as the scoreboard:
+  // NO overtime in DUSTLINE; at 6-6, round 13 is the DECIDER (first-to-7).
+  const isDecider = state.round >= 13;
+  const roundInfo = isDecider ? 'ROUND 13 · DECIDER' : `ROUND ${state.round} · first to 7`;
+  setText(el('phase-label'), { menu: 'MENU',
+    buy: isDecider ? 'BUY PHASE · ROUND 13 · DECIDER' : `BUY PHASE · ROUND ${state.round}`,
+    live: roundInfo, end: 'ROUND OVER', match: 'MATCH OVER' }[state.phase]);
 
   // Score + alive.
   setText(el('score-atk'), String(state.score[TEAM.ATK]));
@@ -136,6 +142,16 @@ export function updateHud(hud, state) {
   const aliveDef = state.agents.filter((a) => a.team === TEAM.DEF && a.alive).length;
   setText(el('alive-atk'), '●'.repeat(aliveAtk) + '○'.repeat(3 - aliveAtk));
   setText(el('alive-def'), '●'.repeat(aliveDef) + '○'.repeat(3 - aliveDef));
+
+  // Live bar pips — thin 13-round history under the bar (same data as
+  // the Tab scoreboard; rebuilt only when it changes).
+  let pips = '';
+  for (let r = 0; r < 13; r++) {
+    const w = state.roundHistory[r];
+    pips += w === TEAM.ATK ? '<span class="pip-atk">●</span>'
+      : w === TEAM.DEF ? '<span class="pip-def">●</span>' : '<span class="pip-todo">○</span>';
+  }
+  if (pips !== hud.lastTopPips) { hud.lastTopPips = pips; el('top-pips').innerHTML = pips; }
 
   // Health / armor / ammo / money.
   el('health-bar').style.width = `${Math.max(0, p.hp)}%`;
